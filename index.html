@@ -1,285 +1,82 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Arch Guide – All Buildings Map</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-  <!-- ✅ Use the SAME MapKit JS CDN as your working file -->
-  <script
-    src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js"
-    crossorigin
-  ></script>
+  <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin></script>
 
   <style>
-    html, body { margin: 0; padding: 0; height: 100%; }
-    #map { width: 100%; height: 100%; }
-
-    #loading {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      font-size: 16px;
-      color: #666;
-      z-index: 10000;
-      background: rgba(255,255,255,0.9);
-      padding: 10px 12px;
-      border-radius: 10px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
+    html, body, #map { margin:0; padding:0; height:100%; width:100%; }
     .building-callout {
-      width: 200px;
-      height: 200px;
-      border-radius: 20px;
-      overflow: hidden;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
-      cursor: pointer;
-      background: white;
+      width:155px;
+      height:155px;
+      border-radius:12px;
+      overflow:hidden;
+      background:#fff;
+      box-shadow:0 8px 24px rgba(0,0,0,.25);
     }
-
     .building-callout img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
-      display: block;
+      width:100%;
+      height:100%;
+      object-fit:cover;
     }
   </style>
 </head>
-
 <body>
-  <div id="loading">Loading map...</div>
-  <div id="map"></div>
+<div id="map"></div>
 
-  <script>
-    // --- Supabase Config ---
-    const SUPABASE_URL = 'https://msuzmrfzzkqffhpilirb.supabase.co';
-    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdXptcmZ6emtxZmZocGlsaXJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3NjY5NDAsImV4cCI6MjA4MjM0Mjk0MH0.kGHLaDT2FR9AAnZjP96FgAcSPjCQm6w9ifAqd6cEOoQ';
+<script>
+const SUPABASE_URL = 'https://msuzmrfzzkqffhpilirb.supabase.co';
+const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_KEY';
 
-    const loadingEl = document.getElementById('loading');
-    const setLoading = (msg) => { if (loadingEl) loadingEl.textContent = msg; };
-    const hideLoading = () => { if (loadingEl) loadingEl.style.display = 'none'; };
+const COLORS = {
+  DTL:'#1150AB', SLV:'#2E7D6F', PAS:'#C56B3C', LFZ:'#E85D75', WHO:'#F4A261'
+};
 
-    // --- State ---
-    let allBuildings = [];
-    let buildingAnnotations = [];
-    let currentFilter = 'all';        // 'all' | 'free' | 'unlocked'
-    let userUnlockedIds = [];         // set from app
-    let userLocationAnnotation = null;
-    let showUserLocation = false;
+mapkit.init({
+  authorizationCallback: done => done('YOUR_MAPKIT_TOKEN')
+});
 
-    // Neighborhood colors for pins
-    const NEIGHBORHOOD_COLORS = {
-      'DTL': '#1150AB',
-      'SLV': '#2E7D6F',
-      'PAS': '#C56B3C',
-      'LFZ': '#E85D75',
-      'WHO': '#F4A261'
+const map = new mapkit.Map("map", {
+  center: new mapkit.Coordinate(34.0522,-118.2437),
+  region: new mapkit.CoordinateRegion(
+    new mapkit.Coordinate(34.0522,-118.2437),
+    new mapkit.CoordinateSpan(0.25,0.35)
+  )
+});
+
+(async function(){
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id`,
+    { headers:{apikey:SUPABASE_ANON_KEY,Authorization:`Bearer ${SUPABASE_ANON_KEY}`} }
+  );
+  const buildings = await res.json();
+  const anns=[];
+
+  buildings.forEach(b=>{
+    if(!b.latitude||!b.longitude) return;
+    const ann = new mapkit.MarkerAnnotation(
+      new mapkit.Coordinate(+b.latitude,+b.longitude),
+      { color:COLORS[b.neighborhood_id]||'#666', data:b }
+    );
+    ann.callout = {
+      calloutElementForAnnotation: a => {
+        const el=document.createElement('div');
+        el.className='building-callout';
+        el.innerHTML=b.image?`<img src="${b.image}">`:`<div>No Image</div>`;
+        el.onclick=()=>window.ReactNativeWebView?.postMessage(
+          JSON.stringify({action:'navigateToBuilding',buildingId:b.id})
+        );
+        return el;
+      }
     };
+    map.addAnnotation(ann);
+    anns.push(ann);
+  });
 
-    // --- Guard: MapKit didn't load ---
-    if (typeof mapkit === "undefined") {
-      setLoading("MapKit failed to load. Check the script URL.");
-      throw new Error("MapKit JS not loaded");
-    }
-
-    // --- MapKit Init ---
-    mapkit.init({
-      authorizationCallback: function(done) {
-        // ✅ Use your same token from the working file
-        done('eyJraWQiOiJSN05HVzZZNko3IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiI4N05MV1VQUVFBIiwiaWF0IjoxNzY3NjcxMDk2LCJvcmlnaW4iOiJhcmNoZ3VpZGUuZ2l0aHViLmlvIn0.aGopUszusE4HfaiqItorz1NoVxzy5z46YItwrq43WVgyERsMm8kkmLZMJNUHd83c-icIhRra2mBFwgpdvYk-SA');
-        setTimeout(hideLoading, 400);
-      }
-    });
-
-    // --- Create Map ---
-    const map = new mapkit.Map("map", {
-      center: new mapkit.Coordinate(34.0522, -118.2437),
-      region: new mapkit.CoordinateRegion(
-        new mapkit.Coordinate(34.0522, -118.2437),
-        new mapkit.CoordinateSpan(0.25, 0.35)
-      ),
-      showsCompass: mapkit.FeatureVisibility.Hidden,
-      showsScale: false,
-      showsMapTypeControl: false,
-      isZoomEnabled: true,
-      isScrollEnabled: true
-    });
-
-    // --- Load All Buildings ---
-    async function loadAllBuildings() {
-      try {
-        setLoading("Loading buildings...");
-        const response = await fetch(
-          `${SUPABASE_URL}/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id,is_free`,
-          {
-            headers: {
-              'apikey': SUPABASE_ANON_KEY,
-              'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
-            }
-          }
-        );
-
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(`Supabase error ${response.status}: ${text}`);
-        }
-
-        allBuildings = await response.json();
-        console.log(`Loaded ${allBuildings.length} total buildings`);
-
-        updateMarkers();
-        hideLoading();
-
-      } catch (error) {
-        console.error('Error loading buildings:', error);
-        setLoading("Error loading buildings (check console).");
-      }
-    }
-
-    // --- Update Markers Based on Filter ---
-    function updateMarkers() {
-      // Clear existing markers
-      buildingAnnotations.forEach(a => map.removeAnnotation(a));
-      buildingAnnotations = [];
-
-      let filtered = allBuildings;
-
-      if (currentFilter === 'free') {
-        filtered = allBuildings.filter(b => b.is_free === true);
-      } else if (currentFilter === 'unlocked') {
-        filtered = allBuildings.filter(b => userUnlockedIds.includes(b.id));
-      }
-
-      filtered.forEach(building => {
-        if (!building.latitude || !building.longitude) return;
-
-        const pinColor = NEIGHBORHOOD_COLORS[building.neighborhood_id] || '#666666';
-
-        const annotation = new mapkit.MarkerAnnotation(
-          new mapkit.Coordinate(building.latitude, building.longitude),
-          {
-            color: pinColor,
-            glyphText: '',
-            title: building.title,
-            data: building
-          }
-        );
-
-        // Rounded image callout
-        annotation.callout = {
-          calloutElementForAnnotation: function(annotation) {
-            const b = annotation.data;
-            const callout = document.createElement('div');
-            callout.className = 'building-callout';
-
-            if (b.image) {
-              callout.innerHTML = `<img src="${b.image}" alt="${b.title}" />`;
-            } else {
-              callout.innerHTML = `
-                <div style="width:100%; height:100%; background:#ddd; display:flex; align-items:center; justify-content:center; font-size:14px; color:#666;">
-                  No Image
-                </div>
-              `;
-            }
-
-            callout.addEventListener('click', () => {
-              if (window.ReactNativeWebView) {
-                window.ReactNativeWebView.postMessage(JSON.stringify({
-                  action: 'navigateToBuilding',
-                  buildingId: b.id,
-                  buildingTitle: b.title
-                }));
-              } else {
-                console.log('Navigate to building:', b.id);
-              }
-            });
-
-            return callout;
-          }
-        };
-
-        map.addAnnotation(annotation);
-        buildingAnnotations.push(annotation);
-      });
-
-      console.log(`Showing ${filtered.length} buildings (filter: ${currentFilter})`);
-    }
-
-    // --- Filter + Unlocked setters (call these via postMessage from Draftbit) ---
-    function setFilter(filter) {
-      currentFilter = (filter || 'all');
-      updateMarkers();
-    }
-
-    function setUnlockedBuildings(ids) {
-      userUnlockedIds = Array.isArray(ids) ? ids : [];
-      if (currentFilter === 'unlocked') updateMarkers();
-    }
-
-    // --- User Location (optional) ---
-    function enableUserLocation() {
-      if (!navigator.geolocation) return;
-
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const userCoord = new mapkit.Coordinate(position.coords.latitude, position.coords.longitude);
-
-          if (userLocationAnnotation) map.removeAnnotation(userLocationAnnotation);
-
-          userLocationAnnotation = new mapkit.MarkerAnnotation(userCoord, {
-            color: '#007AFF',
-            glyphText: '📍',
-            title: 'Your Location'
-          });
-
-          map.addAnnotation(userLocationAnnotation);
-          map.setCenterAnimated(userCoord, true);
-        },
-        (error) => console.error('Location error:', error),
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      );
-    }
-
-    function disableUserLocation() {
-      if (userLocationAnnotation) {
-        map.removeAnnotation(userLocationAnnotation);
-        userLocationAnnotation = null;
-      }
-    }
-
-    // --- Listen for messages from Draftbit / WebView ---
-    // Expected messages:
-    // { action: "setFilter", filter: "all" | "free" | "unlocked" }
-    // { action: "setUnlockedBuildings", buildingIds: ["uuid", "uuid", ...] }
-    // { action: "setUserLocation", enabled: true/false }
-    window.addEventListener('message', (event) => {
-      try {
-        const data = JSON.parse(event.data);
-
-        if (data.action === 'setFilter') {
-          setFilter(data.filter);
-        }
-
-        if (data.action === 'setUnlockedBuildings') {
-          setUnlockedBuildings(data.buildingIds);
-        }
-
-        if (data.action === 'setUserLocation') {
-          showUserLocation = !!data.enabled;
-          if (showUserLocation) enableUserLocation();
-          else disableUserLocation();
-        }
-
-      } catch (e) {
-        // ignore non-JSON messages
-      }
-    });
-
-    // --- Initialize ---
-    loadAllBuildings();
-  </script>
+  if(anns.length) map.showItems(anns);
+})();
+</script>
 </body>
 </html>
