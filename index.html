@@ -4,91 +4,16 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Arch Guide – Discovery Map</title>
+  <title>Arch Guide – All Buildings Map</title>
 
   <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin></script>
 
   <style>
     html, body { margin:0; padding:0; height:100%; }
     #map { width:100%; height:100%; }
-
-    /* top bar */
-    #bar {
-      position:absolute;
-      top: 10px;
-      left: 10px;
-      right: 10px;
-      z-index: 9999;
-      display:flex;
-      gap:8px;
-      align-items:center;
-      overflow-x:auto;
-      padding: 8px;
-      background: rgba(255,255,255,0.92);
-      border-radius: 14px;
-      box-shadow: 0 8px 20px rgba(0,0,0,0.12);
-      -webkit-backdrop-filter: blur(10px);
-      backdrop-filter: blur(10px);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    }
-
-    .chip {
-      flex: 0 0 auto;
-      border: 1px solid rgba(0,0,0,0.12);
-      background: white;
-      padding: 8px 10px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 600;
-      color: #222;
-      cursor: pointer;
-      user-select:none;
-      white-space: nowrap;
-    }
-    .chip.active {
-      border-color: rgba(17,80,171,0.35);
-      background: rgba(17,80,171,0.10);
-      color: #1150AB;
-    }
-
-    #status {
-      flex: 1 1 auto;
-      font-size: 12px;
-      color: #666;
-      font-weight: 600;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      text-align:right;
-    }
-
-    .building-callout {
-      width:155px;
-      height:155px;
-      border-radius:12px;
-      overflow:hidden;
-      box-shadow:0 8px 24px rgba(0,0,0,0.25);
-      cursor:pointer;
-      background:white;
-    }
-    .building-callout img {
-      width:100%;
-      height:100%;
-      object-fit:cover;
-      display:block;
-    }
   </style>
 </head>
 <body>
-  <div id="bar">
-    <div class="chip active" data-mode="discovery">Discovery</div>
-    <div class="chip" data-mode="free">Free</div>
-    <div class="chip" data-mode="locked">Locked</div>
-    <div class="chip" data-mode="unlocked">Unlocked</div>
-    <div class="chip" data-mode="tour">Tour Stops</div>
-    <div id="status">Loading…</div>
-  </div>
-
   <div id="map"></div>
 
   <script>
@@ -96,14 +21,6 @@
     const SUPABASE_URL = 'https://msuzmrfzzkqffhpilirb.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdXptcmZ6emtxZmZocGlsaXJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3NjY5NDAsImV4cCI6MjA4MjM0Mjk0MH0.kGHLaDT2FR9AAnZjP96FgAcSPjCQm6w9ifAqd6cEOoQ';
 
-    // --- MapKit Token (YOURS) ---
-    mapkit.init({
-      authorizationCallback: function(done) {
-        done('eyJraWQiOiJSN05HVzZZNko3IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiI4N05MV1VQUVFBIiwiaWF0IjoxNzY3NjcxMDk2LCJvcmlnaW4iOiJhcmNoZ3VpZGUuZ2l0aHViLmlvIn0.aGopUszusE4HfaiqItorz1NoVxzy5z46YItwrq43WVgyERsMm8kkmLZMJNUHd83c-icIhRra2mBFwgpdvYk-SA');
-      }
-    });
-
-    // --- Neighborhood colors for pins ---
     const NEIGHBORHOOD_COLORS = {
       'DTL': '#1150AB',
       'SLV': '#2E7D6F',
@@ -112,15 +29,13 @@
       'WHO': '#F4A261'
     };
 
-    const statusEl = document.getElementById('status');
-    const setStatus = (t) => { statusEl.textContent = t; };
+    // --- MapKit Init (YOURS) ---
+    mapkit.init({
+      authorizationCallback: function(done) {
+        done('eyJraWQiOiJSN05HVzZZNko3IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiI4N05MV1VQUVFBIiwiaWF0IjoxNzY3NjcxMDk2LCJvcmlnaW4iOiJhcmNoZ3VpZGUuZ2l0aHViLmlvIn0.aGopUszusE4HfaiqItorz1NoVxzy5z46YItwrq43WVgyERsMm8kkmLZMJNUHd83c-icIhRra2mBFwgpdvYk-SA');
+      }
+    });
 
-    // --- Read params ONCE (not per filter) ---
-    const params = new URLSearchParams(window.location.search);
-    const USER_ID = params.get('user_id');   // REQUIRED for locked/unlocked
-    const TOUR_ID = params.get('tour_id');   // OPTIONAL (used for Tour Stops filter)
-
-    // --- Create Map ---
     const map = new mapkit.Map("map", {
       center: new mapkit.Coordinate(34.0522, -118.2437),
       region: new mapkit.CoordinateRegion(
@@ -134,24 +49,17 @@
       isScrollEnabled: true
     });
 
+    // --- user_id passed once in the URL ---
+    const params = new URLSearchParams(window.location.search);
+    const USER_ID = params.get('user_id'); // required for locked/unlocked filters
+
+    // --- State ---
     let allBuildings = [];
     let unlockedSet = new Set();
-    let tourBuildingSet = new Set();
-    let currentMode = 'discovery';
-    let buildingAnnotations = [];
+    let tourSet = new Set();
+    let lastFilterStateJson = "";
 
-    async function supa(path) {
-      const res = await fetch(`${SUPABASE_URL}${path}`, {
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          Accept: 'application/json'
-        }
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(json));
-      return json;
-    }
+    let buildingAnnotations = [];
 
     function clearPins() {
       buildingAnnotations.forEach(a => map.removeAnnotation(a));
@@ -176,13 +84,13 @@
           calloutElementForAnnotation: function(annotation) {
             const building = annotation.data;
             const callout = document.createElement('div');
-            callout.className = 'building-callout';
-
-            if (building.image) {
-              callout.innerHTML = `<img src="${building.image}" alt="${building.title}" />`;
-            } else {
-              callout.innerHTML = `<div style="width:100%; height:100%; background:#ddd; display:flex; align-items:center; justify-content:center; font-size:14px; color:#666;">No Image</div>`;
-            }
+            callout.style.cssText = `
+              width:155px;height:155px;border-radius:12px;overflow:hidden;
+              box-shadow:0 8px 24px rgba(0,0,0,0.25);cursor:pointer;background:white;
+            `;
+            callout.innerHTML = building.image
+              ? `<img src="${building.image}" alt="${building.title}" style="width:100%;height:100%;object-fit:cover;display:block;" />`
+              : `<div style="width:100%;height:100%;background:#ddd;display:flex;align-items:center;justify-content:center;font-size:14px;color:#666;">No Image</div>`;
 
             callout.addEventListener('click', () => {
               if (window.ReactNativeWebView) {
@@ -205,81 +113,110 @@
       if (buildingAnnotations.length) map.showItems(buildingAnnotations);
     }
 
-    function applyMode(mode) {
-      currentMode = mode;
+    async function supaJson(path) {
+      const res = await fetch(`${SUPABASE_URL}${path}`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Accept: 'application/json'
+        }
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(json));
+      return json;
+    }
 
-      // chip UI
-      document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
-      document.querySelector(`.chip[data-mode="${mode}"]`)?.classList.add('active');
+    async function loadBuildingsOnce() {
+      allBuildings = await supaJson(
+        `/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id,is_free`
+      );
+    }
 
-      // data filters
+    async function loadUnlockedOnce() {
+      if (!USER_ID) return;
+      // requires table: user_building_unlocks(user_id, building_id)
+      const rows = await supaJson(
+        `/rest/v1/user_building_unlocks?user_id=eq.${encodeURIComponent(USER_ID)}&select=building_id`
+      );
+      unlockedSet = new Set(rows.map(r => r.building_id));
+    }
+
+    async function loadTourSet(tour_id) {
+      if (!tour_id) { tourSet = new Set(); return; }
+      // requires table: tour_stops(tour_id, building_id)
+      const rows = await supaJson(
+        `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tour_id)}&select=building_id`
+      );
+      tourSet = new Set(rows.map(r => r.building_id));
+    }
+
+    function applyFilterState(state) {
+      // state: {show_free, show_locked, show_unlocked, tour_id}
+      const showFree = state.show_free !== false;
+      const showLocked = state.show_locked !== false;
+      const showUnlocked = state.show_unlocked !== false;
+      const tour_id = state.tour_id || null;
+
       let list = allBuildings;
 
-      if (mode === 'free') {
-        list = list.filter(b => b.is_free === true);
+      // If tour_id set, restrict to tour stops
+      if (tour_id) {
+        list = list.filter(b => tourSet.has(b.id));
       }
 
-      if (mode === 'unlocked') {
-        if (!USER_ID) { setStatus('Missing user_id (unlocked)'); return; }
-        list = list.filter(b => unlockedSet.has(b.id));
-      }
+      // categorize + filter
+      list = list.filter(b => {
+        const isFree = b.is_free === true;
+        const isUnlocked = !isFree && unlockedSet.has(b.id);
+        const isLocked = !isFree && !unlockedSet.has(b.id);
 
-      if (mode === 'locked') {
-        if (!USER_ID) { setStatus('Missing user_id (locked)'); return; }
-        list = list.filter(b => b.is_free !== true && !unlockedSet.has(b.id));
-      }
-
-      if (mode === 'tour') {
-        if (!TOUR_ID) { setStatus('Missing tour_id (tour)'); return; }
-        list = list.filter(b => tourBuildingSet.has(b.id));
-      }
+        return (isFree && showFree) || (isUnlocked && showUnlocked) || (isLocked && showLocked);
+      });
 
       clearPins();
       addPins(list);
-      setStatus(`${list.length} pins • ${mode}`);
     }
 
-    async function boot() {
-      try {
-        setStatus('Loading buildings…');
+    async function pollFilterState() {
+      if (!USER_ID) return;
 
-        // 1) All buildings for discovery (and for all modes)
-        allBuildings = await supa(
-          `/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id,is_free`
-        );
+      // requires table: user_map_filter_state(user_id, show_free, show_locked, show_unlocked, tour_id)
+      const rows = await supaJson(
+        `/rest/v1/user_map_filter_state?user_id=eq.${encodeURIComponent(USER_ID)}&select=show_free,show_locked,show_unlocked,tour_id,updated_at&limit=1`
+      );
 
-        // 2) Unlocked set (only if user_id present)
-        if (USER_ID) {
-          // REQUIRED TABLE NAME: user_building_unlocks (user_id, building_id)
-          const rows = await supa(
-            `/rest/v1/user_building_unlocks?user_id=eq.${encodeURIComponent(USER_ID)}&select=building_id`
-          );
-          unlockedSet = new Set(rows.map(r => r.building_id));
-        }
+      const state = rows && rows[0];
+      if (!state) return;
 
-        // 3) Tour stops set (only if tour_id present)
-        if (TOUR_ID) {
-          // REQUIRED TABLE NAME: tour_stops (tour_id, building_id)
-          const stops = await supa(
-            `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(TOUR_ID)}&select=building_id`
-          );
-          tourBuildingSet = new Set(stops.map(s => s.building_id));
-        }
+      const stateJson = JSON.stringify({
+        show_free: state.show_free,
+        show_locked: state.show_locked,
+        show_unlocked: state.show_unlocked,
+        tour_id: state.tour_id
+      });
 
-        // default mode = discovery (includes free + locked + unlocked)
-        applyMode('discovery');
-      } catch (e) {
-        console.error(e);
-        setStatus('Load error (check console)');
+      if (stateJson !== lastFilterStateJson) {
+        lastFilterStateJson = stateJson;
+
+        // if tour changed, refresh tour set
+        await loadTourSet(state.tour_id);
+
+        applyFilterState(state);
       }
     }
 
-    // wire chips
-    document.querySelectorAll('.chip').forEach(chip => {
-      chip.addEventListener('click', () => applyMode(chip.dataset.mode));
-    });
+    (async function boot() {
+      await loadBuildingsOnce();
+      await loadUnlockedOnce();
 
-    boot();
+      // initial render = discovery (until state arrives)
+      clearPins();
+      addPins(allBuildings);
+
+      // start polling (fast enough to feel instant)
+      await pollFilterState();
+      setInterval(pollFilterState, 700);
+    })();
   </script>
 </body>
 </html>
