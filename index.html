@@ -1,110 +1,239 @@
-// ✅ ADD FILTERS (drop this into the ALL BUILDINGS MAP script)
-// 1) Replace your loadAllBuildings() with this version
-// 2) Add updateMarkers() + message listener below
-// Filter values supported: "all" | "free" | "unlocked" | "neighborhood:DTL" (or SLV/PAS/etc)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>Arch Guide – All Buildings Map (Filterable)</title>
 
-let allBuildings = [];
-let currentFilter = "all";
-let userUnlockedIds = [];
-let buildingAnnotations = [];
+  <!-- SAME MapKit JS as your working map -->
+  <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin></script>
 
-async function loadAllBuildings() {
-  try {
-    const response = await fetch(
-      `${SUPABASE_URL}/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id,is_free`,
-      {
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`
-        }
-      }
-    );
+  <style>
+    html, body { margin:0; padding:0; height:100%; }
+    #map { width:100%; height:100%; }
+    #status {
+      position:absolute;
+      top:12px; left:12px;
+      z-index:9999;
+      padding:8px 10px;
+      border-radius:10px;
+      background: rgba(255,255,255,0.92);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.12);
+      font: 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      color:#333;
+    }
 
-    allBuildings = await response.json();
-    updateMarkers();
-  } catch (e) {
-    console.error("loadAllBuildings error:", e);
-  }
-}
+    .building-callout {
+      width:155px;
+      height:155px;
+      border-radius:12px;
+      overflow:hidden;
+      box-shadow:0 8px 24px rgba(0,0,0,0.25);
+      cursor:pointer;
+      background:white;
+    }
+    .building-callout img {
+      width:100%;
+      height:100%;
+      object-fit:cover;
+      display:block;
+    }
+  </style>
+</head>
+<body>
+  <div id="status">Loading…</div>
+  <div id="map"></div>
 
-function updateMarkers() {
-  // clear existing
-  buildingAnnotations.forEach(a => map.removeAnnotation(a));
-  buildingAnnotations = [];
+  <script>
+    // --- Supabase Config (YOURS) ---
+    const SUPABASE_URL = 'https://msuzmrfzzkqffhpilirb.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdXptcmZ6emtxZmZocGlsaXJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3NjY5NDAsImV4cCI6MjA4MjM0Mjk0MH0.kGHLaDT2FR9AAnZjP96FgAcSPjCQm6w9ifAqd6cEOoQ';
 
-  let filtered = allBuildings;
-
-  if (currentFilter === "free") {
-    filtered = allBuildings.filter(b => b.is_free === true);
-  } else if (currentFilter === "unlocked") {
-    filtered = allBuildings.filter(b => userUnlockedIds.includes(b.id));
-  } else if (currentFilter.startsWith("neighborhood:")) {
-    const nid = currentFilter.split(":")[1];
-    filtered = allBuildings.filter(b => b.neighborhood_id === nid);
-  }
-
-  filtered.forEach(b => {
-    if (!b.latitude || !b.longitude) return;
-
-    const ann = new mapkit.MarkerAnnotation(
-      new mapkit.Coordinate(Number(b.latitude), Number(b.longitude)),
-      {
-        color: NEIGHBORHOOD_COLORS[b.neighborhood_id] || "#666666",
-        glyphText: "",
-        title: b.title,
-        data: b
-      }
-    );
-
-    ann.callout = {
-      calloutElementForAnnotation: function(annotation) {
-        const building = annotation.data;
-        const callout = document.createElement("div");
-        callout.className = "building-callout";
-
-        callout.innerHTML = building.image
-          ? `<img src="${building.image}" alt="${building.title}" />`
-          : `<div style="width:100%; height:100%; background:#ddd; display:flex; align-items:center; justify-content:center; font-size:14px; color:#666;">No Image</div>`;
-
-        callout.addEventListener("click", () => {
-          if (window.ReactNativeWebView) {
-            window.ReactNativeWebView.postMessage(JSON.stringify({
-              action: "navigateToBuilding",
-              buildingId: building.id,
-              buildingTitle: building.title
-            }));
-          }
-        });
-
-        return callout;
-      }
+    // Neighborhood colors for pins
+    const NEIGHBORHOOD_COLORS = {
+      'DTL': '#1150AB',
+      'SLV': '#2E7D6F',
+      'PAS': '#C56B3C',
+      'LFZ': '#E85D75',
+      'WHO': '#F4A261'
     };
 
-    map.addAnnotation(ann);
-    buildingAnnotations.push(ann);
-  });
+    const statusEl = document.getElementById('status');
+    const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
 
-  if (buildingAnnotations.length) map.showItems(buildingAnnotations);
-}
-
-// ✅ DRAFTBIT / APP -> WEBVIEW FILTER CONTROL
-// Send messages like:
-// { "action":"setFilter", "filter":"free" }
-// { "action":"setFilter", "filter":"unlocked" }
-// { "action":"setFilter", "filter":"neighborhood:DTL" }
-// { "action":"setUnlockedBuildings", "buildingIds":["uuid1","uuid2"] }
-window.addEventListener("message", (event) => {
-  try {
-    const data = JSON.parse(event.data);
-
-    if (data.action === "setFilter") {
-      currentFilter = data.filter || "all";
-      updateMarkers();
+    // --- Read filters from URL ---
+    // Use like:
+    //   all:         all-map.html
+    //   free:        all-map.html?filter=free
+    //   neighborhood all-map.html?filter=neighborhood&neighborhood_id=DTL
+    //   tour:        all-map.html?filter=tour&tour_id=<TOUR_UUID>
+    //
+    // tour requires a join table named: tour_stops (tour_id, building_id)
+    function getParams() {
+      const p = new URLSearchParams(window.location.search);
+      return {
+        filter: (p.get('filter') || 'all').toLowerCase(),
+        neighborhood_id: p.get('neighborhood_id'),
+        tour_id: p.get('tour_id')
+      };
     }
 
-    if (data.action === "setUnlockedBuildings" && Array.isArray(data.buildingIds)) {
-      userUnlockedIds = data.buildingIds;
-      if (currentFilter === "unlocked") updateMarkers();
+    // --- MapKit Init (YOUR TOKEN) ---
+    mapkit.init({
+      authorizationCallback: function(done) {
+        done('eyJraWQiOiJSN05HVzZZNko3IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiI4N05MV1VQUVFBIiwiaWF0IjoxNzY3NjcxMDk2LCJvcmlnaW4iOiJhcmNoZ3VpZGUuZ2l0aHViLmlvIn0.aGopUszusE4HfaiqItorz1NoVxzy5z46YItwrq43WVgyERsMm8kkmLZMJNUHd83c-icIhRra2mBFwgpdvYk-SA');
+      }
+    });
+
+    // --- Create Map ---
+    const map = new mapkit.Map("map", {
+      center: new mapkit.Coordinate(34.0522, -118.2437),
+      region: new mapkit.CoordinateRegion(
+        new mapkit.Coordinate(34.0522, -118.2437),
+        new mapkit.CoordinateSpan(0.25, 0.35)
+      ),
+      showsCompass: mapkit.FeatureVisibility.Hidden,
+      showsScale: false,
+      showsMapTypeControl: false,
+      isZoomEnabled: true,
+      isScrollEnabled: true
+    });
+
+    let buildingAnnotations = [];
+
+    function clearPins() {
+      buildingAnnotations.forEach(a => map.removeAnnotation(a));
+      buildingAnnotations = [];
     }
-  } catch (e) {}
-});
+
+    function addPins(buildings) {
+      buildings.forEach(b => {
+        if (!b.latitude || !b.longitude) return;
+
+        const ann = new mapkit.MarkerAnnotation(
+          new mapkit.Coordinate(Number(b.latitude), Number(b.longitude)),
+          {
+            color: NEIGHBORHOOD_COLORS[b.neighborhood_id] || '#666666',
+            glyphText: '',
+            title: b.title,
+            data: b
+          }
+        );
+
+        ann.callout = {
+          calloutElementForAnnotation: function(annotation) {
+            const building = annotation.data;
+            const callout = document.createElement('div');
+            callout.className = 'building-callout';
+
+            if (building.image) {
+              callout.innerHTML = `<img src="${building.image}" alt="${building.title}" />`;
+            } else {
+              callout.innerHTML = `<div style="width:100%; height:100%; background:#ddd; display:flex; align-items:center; justify-content:center; font-size:14px; color:#666;">No Image</div>`;
+            }
+
+            callout.addEventListener('click', () => {
+              if (window.ReactNativeWebView) {
+                window.ReactNativeWebView.postMessage(JSON.stringify({
+                  action: 'navigateToBuilding',
+                  buildingId: building.id,
+                  buildingTitle: building.title
+                }));
+              }
+            });
+
+            return callout;
+          }
+        };
+
+        map.addAnnotation(ann);
+        buildingAnnotations.push(ann);
+      });
+
+      if (buildingAnnotations.length) map.showItems(buildingAnnotations);
+    }
+
+    async function supaJson(path) {
+      const res = await fetch(`${SUPABASE_URL}${path}`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Accept: 'application/json'
+        }
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(`Supabase ${res.status}: ${JSON.stringify(json)}`);
+      return json;
+    }
+
+    // --- Load buildings based on URL filters ---
+    async function loadBuildingsFiltered() {
+      const { filter, neighborhood_id, tour_id } = getParams();
+
+      setStatus(`Loading (${filter})…`);
+      clearPins();
+
+      // Base fields + filter fields
+      const baseSelect = 'id,title,latitude,longitude,image,neighborhood_id,is_free';
+
+      // 1) ALL / FREE / NEIGHBORHOOD = single buildings query
+      if (filter === 'all' || filter === 'free' || filter === 'neighborhood') {
+        let q = `/rest/v1/buildings?select=${encodeURIComponent(baseSelect)}`;
+
+        if (filter === 'free') {
+          q += `&is_free=eq.true`;
+        }
+
+        if (filter === 'neighborhood') {
+          if (!neighborhood_id) {
+            setStatus('Missing neighborhood_id');
+            return;
+          }
+          q += `&neighborhood_id=eq.${encodeURIComponent(neighborhood_id)}`;
+        }
+
+        const buildings = await supaJson(q);
+        addPins(buildings);
+        setStatus(`${buildings.length} pins`);
+        return;
+      }
+
+      // 2) TOUR = query tour_stops -> building_ids -> buildings by id=in.(...)
+      // Requires table: tour_stops (tour_id uuid, building_id uuid)
+      if (filter === 'tour') {
+        if (!tour_id) {
+          setStatus('Missing tour_id');
+          return;
+        }
+
+        const stops = await supaJson(
+          `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tour_id)}&select=building_id`
+        );
+
+        const ids = (stops || []).map(r => r.building_id).filter(Boolean);
+
+        if (ids.length === 0) {
+          setStatus('0 pins (no tour stops)');
+          return;
+        }
+
+        // Supabase "in" filter: id=in.(a,b,c)
+        const inList = `(${ids.join(',')})`;
+        const buildings = await supaJson(
+          `/rest/v1/buildings?select=${encodeURIComponent(baseSelect)}&id=in.${encodeURIComponent(inList)}`
+        );
+
+        addPins(buildings);
+        setStatus(`${buildings.length} pins (tour)`);
+        return;
+      }
+
+      setStatus(`Unknown filter: ${filter}`);
+    }
+
+    // --- Start ---
+    loadBuildingsFiltered();
+  </script>
+</body>
+</html>
