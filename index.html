@@ -4,24 +4,62 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Arch Guide – All Buildings Map (Filterable)</title>
+  <title>Arch Guide – Discovery Map</title>
 
-  <!-- SAME MapKit JS as your working map -->
   <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin></script>
 
   <style>
     html, body { margin:0; padding:0; height:100%; }
     #map { width:100%; height:100%; }
-    #status {
+
+    /* top bar */
+    #bar {
       position:absolute;
-      top:12px; left:12px;
-      z-index:9999;
-      padding:8px 10px;
-      border-radius:10px;
+      top: 10px;
+      left: 10px;
+      right: 10px;
+      z-index: 9999;
+      display:flex;
+      gap:8px;
+      align-items:center;
+      overflow-x:auto;
+      padding: 8px;
       background: rgba(255,255,255,0.92);
-      box-shadow: 0 6px 16px rgba(0,0,0,0.12);
-      font: 13px/1.2 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      color:#333;
+      border-radius: 14px;
+      box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+
+    .chip {
+      flex: 0 0 auto;
+      border: 1px solid rgba(0,0,0,0.12);
+      background: white;
+      padding: 8px 10px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #222;
+      cursor: pointer;
+      user-select:none;
+      white-space: nowrap;
+    }
+    .chip.active {
+      border-color: rgba(17,80,171,0.35);
+      background: rgba(17,80,171,0.10);
+      color: #1150AB;
+    }
+
+    #status {
+      flex: 1 1 auto;
+      font-size: 12px;
+      color: #666;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align:right;
     }
 
     .building-callout {
@@ -42,7 +80,15 @@
   </style>
 </head>
 <body>
-  <div id="status">Loading…</div>
+  <div id="bar">
+    <div class="chip active" data-mode="discovery">Discovery</div>
+    <div class="chip" data-mode="free">Free</div>
+    <div class="chip" data-mode="locked">Locked</div>
+    <div class="chip" data-mode="unlocked">Unlocked</div>
+    <div class="chip" data-mode="tour">Tour Stops</div>
+    <div id="status">Loading…</div>
+  </div>
+
   <div id="map"></div>
 
   <script>
@@ -50,7 +96,14 @@
     const SUPABASE_URL = 'https://msuzmrfzzkqffhpilirb.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdXptcmZ6emtxZmZocGlsaXJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3NjY5NDAsImV4cCI6MjA4MjM0Mjk0MH0.kGHLaDT2FR9AAnZjP96FgAcSPjCQm6w9ifAqd6cEOoQ';
 
-    // Neighborhood colors for pins
+    // --- MapKit Token (YOURS) ---
+    mapkit.init({
+      authorizationCallback: function(done) {
+        done('eyJraWQiOiJSN05HVzZZNko3IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiI4N05MV1VQUVFBIiwiaWF0IjoxNzY3NjcxMDk2LCJvcmlnaW4iOiJhcmNoZ3VpZGUuZ2l0aHViLmlvIn0.aGopUszusE4HfaiqItorz1NoVxzy5z46YItwrq43WVgyERsMm8kkmLZMJNUHd83c-icIhRra2mBFwgpdvYk-SA');
+      }
+    });
+
+    // --- Neighborhood colors for pins ---
     const NEIGHBORHOOD_COLORS = {
       'DTL': '#1150AB',
       'SLV': '#2E7D6F',
@@ -60,31 +113,12 @@
     };
 
     const statusEl = document.getElementById('status');
-    const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
+    const setStatus = (t) => { statusEl.textContent = t; };
 
-    // --- Read filters from URL ---
-    // Use like:
-    //   all:         all-map.html
-    //   free:        all-map.html?filter=free
-    //   neighborhood all-map.html?filter=neighborhood&neighborhood_id=DTL
-    //   tour:        all-map.html?filter=tour&tour_id=<TOUR_UUID>
-    //
-    // tour requires a join table named: tour_stops (tour_id, building_id)
-    function getParams() {
-      const p = new URLSearchParams(window.location.search);
-      return {
-        filter: (p.get('filter') || 'all').toLowerCase(),
-        neighborhood_id: p.get('neighborhood_id'),
-        tour_id: p.get('tour_id')
-      };
-    }
-
-    // --- MapKit Init (YOUR TOKEN) ---
-    mapkit.init({
-      authorizationCallback: function(done) {
-        done('eyJraWQiOiJSN05HVzZZNko3IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiI4N05MV1VQUVFBIiwiaWF0IjoxNzY3NjcxMDk2LCJvcmlnaW4iOiJhcmNoZ3VpZGUuZ2l0aHViLmlvIn0.aGopUszusE4HfaiqItorz1NoVxzy5z46YItwrq43WVgyERsMm8kkmLZMJNUHd83c-icIhRra2mBFwgpdvYk-SA');
-      }
-    });
+    // --- Read params ONCE (not per filter) ---
+    const params = new URLSearchParams(window.location.search);
+    const USER_ID = params.get('user_id');   // REQUIRED for locked/unlocked
+    const TOUR_ID = params.get('tour_id');   // OPTIONAL (used for Tour Stops filter)
 
     // --- Create Map ---
     const map = new mapkit.Map("map", {
@@ -100,7 +134,24 @@
       isScrollEnabled: true
     });
 
+    let allBuildings = [];
+    let unlockedSet = new Set();
+    let tourBuildingSet = new Set();
+    let currentMode = 'discovery';
     let buildingAnnotations = [];
+
+    async function supa(path) {
+      const res = await fetch(`${SUPABASE_URL}${path}`, {
+        headers: {
+          apikey: SUPABASE_ANON_KEY,
+          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
+          Accept: 'application/json'
+        }
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(JSON.stringify(json));
+      return json;
+    }
 
     function clearPins() {
       buildingAnnotations.forEach(a => map.removeAnnotation(a));
@@ -154,86 +205,81 @@
       if (buildingAnnotations.length) map.showItems(buildingAnnotations);
     }
 
-    async function supaJson(path) {
-      const res = await fetch(`${SUPABASE_URL}${path}`, {
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          Accept: 'application/json'
-        }
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(`Supabase ${res.status}: ${JSON.stringify(json)}`);
-      return json;
-    }
+    function applyMode(mode) {
+      currentMode = mode;
 
-    // --- Load buildings based on URL filters ---
-    async function loadBuildingsFiltered() {
-      const { filter, neighborhood_id, tour_id } = getParams();
+      // chip UI
+      document.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+      document.querySelector(`.chip[data-mode="${mode}"]`)?.classList.add('active');
 
-      setStatus(`Loading (${filter})…`);
+      // data filters
+      let list = allBuildings;
+
+      if (mode === 'free') {
+        list = list.filter(b => b.is_free === true);
+      }
+
+      if (mode === 'unlocked') {
+        if (!USER_ID) { setStatus('Missing user_id (unlocked)'); return; }
+        list = list.filter(b => unlockedSet.has(b.id));
+      }
+
+      if (mode === 'locked') {
+        if (!USER_ID) { setStatus('Missing user_id (locked)'); return; }
+        list = list.filter(b => b.is_free !== true && !unlockedSet.has(b.id));
+      }
+
+      if (mode === 'tour') {
+        if (!TOUR_ID) { setStatus('Missing tour_id (tour)'); return; }
+        list = list.filter(b => tourBuildingSet.has(b.id));
+      }
+
       clearPins();
-
-      // Base fields + filter fields
-      const baseSelect = 'id,title,latitude,longitude,image,neighborhood_id,is_free';
-
-      // 1) ALL / FREE / NEIGHBORHOOD = single buildings query
-      if (filter === 'all' || filter === 'free' || filter === 'neighborhood') {
-        let q = `/rest/v1/buildings?select=${encodeURIComponent(baseSelect)}`;
-
-        if (filter === 'free') {
-          q += `&is_free=eq.true`;
-        }
-
-        if (filter === 'neighborhood') {
-          if (!neighborhood_id) {
-            setStatus('Missing neighborhood_id');
-            return;
-          }
-          q += `&neighborhood_id=eq.${encodeURIComponent(neighborhood_id)}`;
-        }
-
-        const buildings = await supaJson(q);
-        addPins(buildings);
-        setStatus(`${buildings.length} pins`);
-        return;
-      }
-
-      // 2) TOUR = query tour_stops -> building_ids -> buildings by id=in.(...)
-      // Requires table: tour_stops (tour_id uuid, building_id uuid)
-      if (filter === 'tour') {
-        if (!tour_id) {
-          setStatus('Missing tour_id');
-          return;
-        }
-
-        const stops = await supaJson(
-          `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tour_id)}&select=building_id`
-        );
-
-        const ids = (stops || []).map(r => r.building_id).filter(Boolean);
-
-        if (ids.length === 0) {
-          setStatus('0 pins (no tour stops)');
-          return;
-        }
-
-        // Supabase "in" filter: id=in.(a,b,c)
-        const inList = `(${ids.join(',')})`;
-        const buildings = await supaJson(
-          `/rest/v1/buildings?select=${encodeURIComponent(baseSelect)}&id=in.${encodeURIComponent(inList)}`
-        );
-
-        addPins(buildings);
-        setStatus(`${buildings.length} pins (tour)`);
-        return;
-      }
-
-      setStatus(`Unknown filter: ${filter}`);
+      addPins(list);
+      setStatus(`${list.length} pins • ${mode}`);
     }
 
-    // --- Start ---
-    loadBuildingsFiltered();
+    async function boot() {
+      try {
+        setStatus('Loading buildings…');
+
+        // 1) All buildings for discovery (and for all modes)
+        allBuildings = await supa(
+          `/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id,is_free`
+        );
+
+        // 2) Unlocked set (only if user_id present)
+        if (USER_ID) {
+          // REQUIRED TABLE NAME: user_building_unlocks (user_id, building_id)
+          const rows = await supa(
+            `/rest/v1/user_building_unlocks?user_id=eq.${encodeURIComponent(USER_ID)}&select=building_id`
+          );
+          unlockedSet = new Set(rows.map(r => r.building_id));
+        }
+
+        // 3) Tour stops set (only if tour_id present)
+        if (TOUR_ID) {
+          // REQUIRED TABLE NAME: tour_stops (tour_id, building_id)
+          const stops = await supa(
+            `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(TOUR_ID)}&select=building_id`
+          );
+          tourBuildingSet = new Set(stops.map(s => s.building_id));
+        }
+
+        // default mode = discovery (includes free + locked + unlocked)
+        applyMode('discovery');
+      } catch (e) {
+        console.error(e);
+        setStatus('Load error (check console)');
+      }
+    }
+
+    // wire chips
+    document.querySelectorAll('.chip').forEach(chip => {
+      chip.addEventListener('click', () => applyMode(chip.dataset.mode));
+    });
+
+    boot();
   </script>
 </body>
 </html>
