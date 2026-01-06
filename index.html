@@ -9,7 +9,7 @@
   <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin></script>
 
   <style>
-    html, body { margin:0; padding:0; height:100%; }
+    html, body { margin:0; padding:0; height:100%; overflow:hidden; }
     #map { width:100%; height:100%; }
   </style>
 </head>
@@ -17,9 +17,11 @@
   <div id="map"></div>
 
   <script>
-    // --- Supabase Config (YOURS) ---
+    // --- CONFIG ---
     const SUPABASE_URL = 'https://msuzmrfzzkqffhpilirb.supabase.co';
     const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1zdXptcmZ6emtxZmZocGlsaXJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjY3NjY5NDAsImV4cCI6MjA4MjM0Mjk0MH0.kGHLaDT2FR9AAnZjP96FgAcSPjCQm6w9ifAqd6cEOoQ';
+    
+    const MAPKIT_TOKEN = 'eyJraWQiOiJSN05HVzZZNko3IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiI4N05MV1VQUVFBIiwiaWF0IjoxNzY3NjcxMDk2LCJvcmlnaW4iOiJhcmNoZ3VpZGUuZ2l0aHViLmlvIn0.aGopUszusE4HfaiqItorz1NoVxzy5z46YItwrq43WVgyERsMm8kkmLZMJNUHd83c-icIhRra2mBFwgpdvYk-SA';
 
     const NEIGHBORHOOD_COLORS = {
       'DTL': '#1150AB',
@@ -29,10 +31,18 @@
       'WHO': '#F4A261'
     };
 
-    // --- MapKit Init (YOURS) ---
+    // --- Get user_id from URL ---
+    const params = new URLSearchParams(window.location.search);
+    const USER_ID = params.get('user_id');
+    if (!USER_ID) {
+      document.body.innerHTML = '<div style="padding:20px;color:red;">Error: user_id required</div>';
+      throw new Error('USER_ID missing from URL');
+    }
+
+    // --- MapKit Init ---
     mapkit.init({
       authorizationCallback: function(done) {
-        done('eyJraWQiOiJSN05HVzZZNko3IiwidHlwIjoiSldUIiwiYWxnIjoiRVMyNTYifQ.eyJpc3MiOiI4N05MV1VQUVFBIiwiaWF0IjoxNzY3NjcxMDk2LCJvcmlnaW4iOiJhcmNoZ3VpZGUuZ2l0aHViLmlvIn0.aGopUszusE4HfaiqItorz1NoVxzy5z46YItwrq43WVgyERsMm8kkmLZMJNUHd83c-icIhRra2mBFwgpdvYk-SA');
+        done(MAPKIT_TOKEN);
       }
     });
 
@@ -49,18 +59,61 @@
       isScrollEnabled: true
     });
 
-    // --- user_id passed once in the URL ---
-    const params = new URLSearchParams(window.location.search);
-    const USER_ID = params.get('user_id'); // required for locked/unlocked filters
-
     // --- State ---
     let allBuildings = [];
     let unlockedSet = new Set();
     let tourSet = new Set();
     let lastFilterStateJson = "";
-
     let buildingAnnotations = [];
 
+    // --- Helper: Supabase fetch ---
+    async function supaJson(path) {
+      const res = await fetch(`${SUPABASE_URL}${path}`, {
+        headers: {
+          'apikey': SUPABASE_ANON_KEY,
+          'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+          'Accept': 'application/json'
+        }
+      });
+      if (!res.ok) {
+        const error = await res.text();
+        console.error('Supabase error:', error);
+        throw new Error(`Supabase: ${res.status} ${error}`);
+      }
+      return res.json();
+    }
+
+    // --- Load data once ---
+    async function loadBuildingsOnce() {
+      allBuildings = await supaJson(
+        `/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id,is_free`
+      );
+      console.log(`Loaded ${allBuildings.length} buildings`);
+    }
+
+    async function loadUnlockedOnce() {
+      // Requires table: user_building_unlocks(user_id, building_id)
+      const rows = await supaJson(
+        `/rest/v1/user_building_unlocks?user_id=eq.${encodeURIComponent(USER_ID)}&select=building_id`
+      );
+      unlockedSet = new Set(rows.map(r => r.building_id));
+      console.log(`User has ${unlockedSet.size} unlocked buildings`);
+    }
+
+    async function loadTourSet(tour_id) {
+      if (!tour_id) { 
+        tourSet = new Set(); 
+        return; 
+      }
+      // Requires table: tour_stops(tour_id, building_id)
+      const rows = await supaJson(
+        `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tour_id)}&select=building_id`
+      );
+      tourSet = new Set(rows.map(r => r.building_id));
+      console.log(`Tour has ${tourSet.size} stops`);
+    }
+
+    // --- Pin management ---
     function clearPins() {
       buildingAnnotations.forEach(a => map.removeAnnotation(a));
       buildingAnnotations = [];
@@ -110,48 +163,14 @@
         buildingAnnotations.push(ann);
       });
 
-      if (buildingAnnotations.length) map.showItems(buildingAnnotations);
+      if (buildingAnnotations.length) {
+        map.showItems(buildingAnnotations);
+      }
+      console.log(`Showing ${buildingAnnotations.length} pins`);
     }
 
-    async function supaJson(path) {
-      const res = await fetch(`${SUPABASE_URL}${path}`, {
-        headers: {
-          apikey: SUPABASE_ANON_KEY,
-          Authorization: `Bearer ${SUPABASE_ANON_KEY}`,
-          Accept: 'application/json'
-        }
-      });
-      const json = await res.json();
-      if (!res.ok) throw new Error(JSON.stringify(json));
-      return json;
-    }
-
-    async function loadBuildingsOnce() {
-      allBuildings = await supaJson(
-        `/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id,is_free`
-      );
-    }
-
-    async function loadUnlockedOnce() {
-      if (!USER_ID) return;
-      // requires table: user_building_unlocks(user_id, building_id)
-      const rows = await supaJson(
-        `/rest/v1/user_building_unlocks?user_id=eq.${encodeURIComponent(USER_ID)}&select=building_id`
-      );
-      unlockedSet = new Set(rows.map(r => r.building_id));
-    }
-
-    async function loadTourSet(tour_id) {
-      if (!tour_id) { tourSet = new Set(); return; }
-      // requires table: tour_stops(tour_id, building_id)
-      const rows = await supaJson(
-        `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tour_id)}&select=building_id`
-      );
-      tourSet = new Set(rows.map(r => r.building_id));
-    }
-
+    // --- Apply filter logic ---
     function applyFilterState(state) {
-      // state: {show_free, show_locked, show_unlocked, tour_id}
       const showFree = state.show_free !== false;
       const showLocked = state.show_locked !== false;
       const showUnlocked = state.show_unlocked !== false;
@@ -159,12 +178,12 @@
 
       let list = allBuildings;
 
-      // If tour_id set, restrict to tour stops
+      // If tour mode, restrict to tour stops
       if (tour_id) {
         list = list.filter(b => tourSet.has(b.id));
       }
 
-      // categorize + filter
+      // Filter by unlock status
       list = list.filter(b => {
         const isFree = b.is_free === true;
         const isUnlocked = !isFree && unlockedSet.has(b.id);
@@ -177,45 +196,57 @@
       addPins(list);
     }
 
+    // --- Poll filter state from DB ---
     async function pollFilterState() {
-      if (!USER_ID) return;
+      try {
+        const rows = await supaJson(
+          `/rest/v1/user_map_filter_state?user_id=eq.${encodeURIComponent(USER_ID)}&select=show_free,show_locked,show_unlocked,tour_id&limit=1`
+        );
 
-      // requires table: user_map_filter_state(user_id, show_free, show_locked, show_unlocked, tour_id)
-      const rows = await supaJson(
-        `/rest/v1/user_map_filter_state?user_id=eq.${encodeURIComponent(USER_ID)}&select=show_free,show_locked,show_unlocked,tour_id,updated_at&limit=1`
-      );
+        const state = rows && rows[0];
+        if (!state) {
+          // No state yet - use defaults
+          return;
+        }
 
-      const state = rows && rows[0];
-      if (!state) return;
+        const stateJson = JSON.stringify({
+          show_free: state.show_free,
+          show_locked: state.show_locked,
+          show_unlocked: state.show_unlocked,
+          tour_id: state.tour_id
+        });
 
-      const stateJson = JSON.stringify({
-        show_free: state.show_free,
-        show_locked: state.show_locked,
-        show_unlocked: state.show_unlocked,
-        tour_id: state.tour_id
-      });
+        // Only update if changed
+        if (stateJson !== lastFilterStateJson) {
+          lastFilterStateJson = stateJson;
 
-      if (stateJson !== lastFilterStateJson) {
-        lastFilterStateJson = stateJson;
+          // If tour changed, refresh tour stops
+          await loadTourSet(state.tour_id);
 
-        // if tour changed, refresh tour set
-        await loadTourSet(state.tour_id);
-
-        applyFilterState(state);
+          applyFilterState(state);
+        }
+      } catch (err) {
+        console.error('Poll error:', err);
       }
     }
 
+    // --- Boot ---
     (async function boot() {
-      await loadBuildingsOnce();
-      await loadUnlockedOnce();
+      try {
+        await loadBuildingsOnce();
+        await loadUnlockedOnce();
 
-      // initial render = discovery (until state arrives)
-      clearPins();
-      addPins(allBuildings);
+        // Show all by default
+        clearPins();
+        addPins(allBuildings);
 
-      // start polling (fast enough to feel instant)
-      await pollFilterState();
-      setInterval(pollFilterState, 700);
+        // Start polling
+        await pollFilterState();
+        setInterval(pollFilterState, 700);
+      } catch (err) {
+        console.error('Boot error:', err);
+        document.body.innerHTML = `<div style="padding:20px;color:red;">Error: ${err.message}</div>`;
+      }
     })();
   </script>
 </body>
