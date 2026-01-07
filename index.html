@@ -209,13 +209,13 @@
       });
 
       // Auto-frame the map to show all visible pins
-      if (buildingAnnotations.length > 0) {
-        const coords = buildingAnnotations.map(a => a.coordinate);
-        const region = mapkit.CoordinateRegion.regionFittingCoordinates(coords, {
-          minimumSpan: new mapkit.CoordinateSpan(0.01, 0.01) // Minimum zoom level
-        });
-        map.setRegion(region, true); // true = animated transition
-      }
+// Auto-frame the map to show all visible pins
+if (buildingAnnotations.length > 0) {
+  map.showItems(buildingAnnotations, {
+    animate: true,
+    minimumSpan: new mapkit.CoordinateSpan(0.01, 0.01)
+  });
+}
 
       console.log(`Showing ${buildingAnnotations.length} pins`);
     }
