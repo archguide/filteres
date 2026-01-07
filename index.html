@@ -238,9 +238,9 @@
 
     // --- Filter logic ---
     function applyFilters() {
-      const showFree = params.get('show_free') === 'false';
-      const showLocked = params.get('show_locked') === 'false';
-      const showUnlocked = params.get('show_unlocked') === 'false';
+      const showFree = params.get('show_free') === 'true';
+      const showLocked = params.get('show_locked') === 'true';
+      const showUnlocked = params.get('show_unlocked') === 'true';
 
       let filteredBuildings = [];
 
