@@ -281,23 +281,29 @@
           }
 
           // Location filter  
-          if (filterLocation && b.latitude && b.longitude) {
-            const [userLat, userLng, radiusKm] = filterLocation.split(',');
-            if (userLat && userLng && radiusKm) {
-              const distance = calculateDistance(
-                Number(userLat), Number(userLng),
-                Number(b.latitude), Number(b.longitude)
-              );
-              if (distance > Number(radiusKm)) passes = false;
-            }
-          }
-
-          return passes;
-        });
-      }
-
-      addPins(filteredBuildings);
+   // Center map on user location if provided
+const filterLocation = params.get('location');
+if (filterLocation) {
+  const locationParts = filterLocation.split(',');
+  if (locationParts.length >= 2) {
+    const userLat = Number(locationParts[0]);
+    const userLng = Number(locationParts[1]);
+    const radiusKm = locationParts[2] ? Number(locationParts[2]) : 5; // default 5km
+    
+    if (!isNaN(userLat) && !isNaN(userLng)) {
+      // Center map on user location with appropriate zoom
+      const spanSize = (radiusKm / 111) * 2; // Convert km to degrees (rough)
+      map.setRegion(new mapkit.CoordinateRegion(
+        new mapkit.Coordinate(userLat, userLng),
+        new mapkit.CoordinateSpan(spanSize, spanSize)
+      ), true);
+      return; // Skip the showItems auto-framing
     }
+  }
+}
+
+addPins(filteredBuildings);
+
 
     // --- Initialize ---
     (async function init() {
