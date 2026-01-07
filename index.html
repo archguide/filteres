@@ -237,11 +237,25 @@
     }
 
     // --- Filter logic ---
-    function applyFilters() {
-      const showFree = params.get('show_free') === 'true';
-      const showLocked = params.get('show_locked') === 'true';
-      const showUnlocked = params.get('show_unlocked') === 'true';
+// Read URL parameters with defaults
+const showFree = params.get('show_free') !== 'false';
+const showLocked = params.get('show_locked') !== 'false'; 
+const showUnlocked = params.get('show_unlocked') !== 'false';
 
+// If no URL parameters at all, show everything
+const hasFilterParams = params.has('show_free') || params.has('show_locked') || params.has('show_unlocked');
+if (!hasFilterParams) {
+  filteredBuildings = allBuildings;
+} else {
+  // Apply filters
+  filteredBuildings = allBuildings.filter(b => {
+    const isFree = b.is_free === true;
+    const isUnlocked = !isFree && unlockedSet.has(b.id);
+    const isLocked = !isFree && !unlockedSet.has(b.id);
+
+    return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
+  });
+}
       let filteredBuildings = [];
 
       if (TOUR_ID) {
