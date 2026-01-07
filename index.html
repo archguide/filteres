@@ -260,14 +260,19 @@
         }
       } else {
         // Filter mode: apply building type filters
-        filteredBuildings = allBuildings.filter(b => {
-          const isFree = b.is_free === true;
-          const isUnlocked = !isFree && unlockedSet.has(b.id);
-          const isLocked = !isFree && !unlockedSet.has(b.id);
+filteredBuildings = allBuildings.filter(b => {
+  const isFree = b.is_free === true;
+  const isUnlocked = !isFree && unlockedSet.has(b.id);
+  const isLocked = !isFree && !unlockedSet.has(b.id);
 
-          return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
-        });
-      }
+  // New logic: Hide buildings whose type is set to false
+  if (isFree && !showFree) return false;
+  if (isUnlocked && !showUnlocked) return false;  
+  if (isLocked && !showLocked) return false;
+  
+  // Show everything else
+  return true;
+});
 
       addPins(filteredBuildings);
     }
