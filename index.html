@@ -34,7 +34,6 @@
     // --- Get parameters from URL ---
     const params = new URLSearchParams(window.location.search);
     const USER_ID = params.get('user_id');
-    const TOUR_ID = params.get('tour_id');
     
     if (!USER_ID) {
       document.body.innerHTML = '<div style="padding:20px;color:red;">Error: user_id required</div>';
@@ -84,17 +83,6 @@
         throw new Error(`Supabase: ${res.status} ${error}`);
       }
       return res.json();
-    }
-
-    function calculateDistance(lat1, lng1, lat2, lng2) {
-      const R = 6371; // Earth's radius in km
-      const dLat = (lat2 - lat1) * Math.PI / 180;
-      const dLng = (lng2 - lng1) * Math.PI / 180;
-      const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-        Math.sin(dLng/2) * Math.sin(dLng/2);
-      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-      return R * c;
     }
 
     // --- Data loading ---
@@ -207,12 +195,42 @@
         buildingAnnotations.push(ann);
       });
 
-      // Auto-frame the map to show all pins
-      if (buildingAnnotations.length > 0) {
-        map.showItems(buildingAnnotations, { animate: true });
-      }
+      console.log(`Added ${buildingAnnotations.length} pins to map`);
+    }
 
-      console.log(`Showing ${buildingAnnotations.length} pins`);
+    function focusMapOnPins() {
+      if (buildingAnnotations.length === 0) return;
+      
+      // Get bounds of all pins
+      let minLat = buildingAnnotations[0].coordinate.latitude;
+      let maxLat = buildingAnnotations[0].coordinate.latitude;
+      let minLng = buildingAnnotations[0].coordinate.longitude;
+      let maxLng = buildingAnnotations[0].coordinate.longitude;
+
+      buildingAnnotations.forEach(ann => {
+        const lat = ann.coordinate.latitude;
+        const lng = ann.coordinate.longitude;
+        if (lat < minLat) minLat = lat;
+        if (lat > maxLat) maxLat = lat;
+        if (lng < minLng) minLng = lng;
+        if (lng > maxLng) maxLng = lng;
+      });
+
+      // Add padding
+      const latPadding = (maxLat - minLat) * 0.1;
+      const lngPadding = (maxLng - minLng) * 0.1;
+
+      const center = new mapkit.Coordinate(
+        (minLat + maxLat) / 2,
+        (minLng + maxLng) / 2
+      );
+
+      const span = new mapkit.CoordinateSpan(
+        Math.max((maxLat - minLat) + latPadding, 0.01),
+        Math.max((maxLng - minLng) + lngPadding, 0.01)
+      );
+
+      map.setRegion(new mapkit.CoordinateRegion(center, span), true);
     }
 
     function addRoutePolylines() {
@@ -249,61 +267,69 @@
 
     // --- Main filter logic ---
     function applyFilters() {
-      let filteredBuildings = [];
-
-      if (TOUR_ID) {
-        // TOUR MODE: Show only tour stops with route
+      // Check if this is tour mode
+      const tourId = params.get('tour_id');
+      
+      if (tourId) {
+        // TOUR MODE
         const tourStopIds = new Set(tourStops.map(s => s.building_id));
-        filteredBuildings = allBuildings.filter(b => tourStopIds.has(b.id));
-        addRoutePolylines();
+        const filteredBuildings = allBuildings.filter(b => tourStopIds.has(b.id));
         
-      } else {
-        // DISCOVERY MODE: Apply all filters
-        const showAvailable = params.get('show_available') !== 'false';
-        const showLocked = params.get('show_locked') !== 'false';
-        const filterNeighborhood = params.get('neighborhood');
-        const filterLocation = params.get('location');
+        addPins(filteredBuildings);
+        addRoutePolylines();
+        focusMapOnPins();
+        return;
+      }
 
-        filteredBuildings = allBuildings.filter(b => {
-          let passes = true;
+      // DISCOVERY MODE - Apply filters
+      const showAvailable = params.get('show_available') !== 'false';
+      const showLocked = params.get('show_locked') !== 'false';
+      const filterNeighborhood = params.get('neighborhood');
+      const userLocation = params.get('location');
 
-          // Availability filter
-          const isFree = b.is_free === true;
-          const isUnlocked = unlockedSet.has(b.id);
-          const isAvailable = isFree || isUnlocked;
+      const filteredBuildings = allBuildings.filter(b => {
+        // Availability filter
+        const isFree = b.is_free === true;
+        const isUnlocked = unlockedSet.has(b.id);
+        const isAvailable = isFree || isUnlocked;
+        
+        if (isAvailable && !showAvailable) return false;
+        if (!isAvailable && !showLocked) return false;
+
+        // Neighborhood filter
+        if (filterNeighborhood && filterNeighborhood !== 'ALL' && b.neighborhood_id !== filterNeighborhood) {
+          return false;
+        }
+
+        return true;
+      });
+
+      addPins(filteredBuildings);
+
+      // Handle user location for map centering
+      if (userLocation) {
+        const locationParts = userLocation.split(',');
+        if (locationParts.length >= 2) {
+          const userLat = Number(locationParts[0]);
+          const userLng = Number(locationParts[1]);
+          const radiusKm = locationParts[2] ? Number(locationParts[2]) : 5;
           
-          if (isAvailable && !showAvailable) passes = false;
-          if (!isAvailable && !showLocked) passes = false;
+          if (!isNaN(userLat) && !isNaN(userLng)) {
+            // Convert km to approximate degrees (rough conversion)
+            const spanSize = (radiusKm / 111) * 2;
+            
+            map.setRegion(new mapkit.CoordinateRegion(
+              new mapkit.Coordinate(userLat, userLng),
+              new mapkit.CoordinateSpan(spanSize, spanSize)
+            ), true);
+            return;
+          }
+        }
+      }
 
-          // Neighborhood filter
-       if (filterNeighborhood && filterNeighborhood !== 'ALL' && b.neighborhood_id !== filterNeighborhood) {
-  passes = false;
-}
-
-          // Location filter  
-   // Center map on user location if provided
-const filterLocation = params.get('location');
-if (filterLocation) {
-  const locationParts = filterLocation.split(',');
-  if (locationParts.length >= 2) {
-    const userLat = Number(locationParts[0]);
-    const userLng = Number(locationParts[1]);
-    const radiusKm = locationParts[2] ? Number(locationParts[2]) : 5; // default 5km
-    
-    if (!isNaN(userLat) && !isNaN(userLng)) {
-      // Center map on user location with appropriate zoom
-      const spanSize = (radiusKm / 111) * 2; // Convert km to degrees (rough)
-      map.setRegion(new mapkit.CoordinateRegion(
-        new mapkit.Coordinate(userLat, userLng),
-        new mapkit.CoordinateSpan(spanSize, spanSize)
-      ), true);
-      return; // Skip the showItems auto-framing
+      // Default: focus on filtered pins
+      focusMapOnPins();
     }
-  }
-}
-
-addPins(filteredBuildings);
-
 
     // --- Initialize ---
     (async function init() {
@@ -311,8 +337,9 @@ addPins(filteredBuildings);
         await loadBuildingsOnce();
         await loadUnlockedOnce();
         
-        if (TOUR_ID) {
-          await loadTourData(TOUR_ID);
+        const tourId = params.get('tour_id');
+        if (tourId) {
+          await loadTourData(tourId);
         }
 
         applyFilters();
