@@ -63,7 +63,7 @@
     let allBuildings = [];
     let unlockedSet = new Set();
     let tourSet = new Set();
-    let lastStateJson = "";
+    let lastFilterStateJson = "";
     let buildingAnnotations = [];
 
     // --- Helper: Supabase fetch ---
@@ -92,12 +92,16 @@
     }
 
     async function loadUnlockedOnce() {
-      // Requires table: user_building_unlocks(user_id, building_id)
-      const rows = await supaJson(
-        `/rest/v1/user_building_unlocks?user_id=eq.${encodeURIComponent(USER_ID)}&select=building_id`
-      );
-      unlockedSet = new Set(rows.map(r => r.building_id));
-      console.log(`User has ${unlockedSet.size} unlocked buildings`);
+      try {
+        const rows = await supaJson(
+          `/rest/v1/user_building_unlocks?user_id=eq.${encodeURIComponent(USER_ID)}&select=building_id`
+        );
+        unlockedSet = new Set(rows.map(r => r.building_id));
+        console.log(`User has ${unlockedSet.size} unlocked buildings`);
+      } catch (err) {
+        console.log('No unlocked buildings table or data');
+        unlockedSet = new Set();
+      }
     }
 
     async function loadTourSet(tour_id) {
@@ -105,12 +109,16 @@
         tourSet = new Set(); 
         return; 
       }
-      // Requires table: tour_stops(tour_id, building_id)
-      const rows = await supaJson(
-        `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tour_id)}&select=building_id`
-      );
-      tourSet = new Set(rows.map(r => r.building_id));
-      console.log(`Tour has ${tourSet.size} stops`);
+      try {
+        const rows = await supaJson(
+          `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tour_id)}&select=building_id`
+        );
+        tourSet = new Set(rows.map(r => r.building_id));
+        console.log(`Tour has ${tourSet.size} stops`);
+      } catch (err) {
+        console.log('No tour stops table or data');
+        tourSet = new Set();
+      }
     }
 
     // --- Pin management ---
@@ -166,65 +174,31 @@
       if (buildingAnnotations.length) {
         map.showItems(buildingAnnotations);
       }
-     console.log(`Showing ${buildingAnnotations.length} pins - Filter state:`, {showFree, showLocked, showUnlocked});
+      console.log(`Showing ${buildingAnnotations.length} pins`);
     }
 
-function applyFilterState(state) {
-  console.log('=== FILTER DEBUG ===');
-  console.log('State from database:', state);
-  
-  const showFree = state.show_free === true;
-  const showLocked = state.show_locked === true;  
-  const showUnlocked = state.show_unlocked === true;
-  
-  console.log('Filter flags:', {showFree, showLocked, showUnlocked});
-  console.log('Total buildings before filter:', allBuildings.length);
-  
-  let list = allBuildings;
+    // --- Apply filter logic ---
+    function applyFilterState(state) {
+      const showFree = state.show_free === true;
+      const showLocked = state.show_locked === true;
+      const showUnlocked = state.show_unlocked === true;
+      const tour_id = state.tour_id || null;
 
-  // If tour mode, restrict to tour stops
-  if (state.tour_id) {
-    list = list.filter(b => tourSet.has(b.id));
-    console.log('After tour filter:', list.length);
-  }
+      let list = allBuildings;
 
-  // Debug: Check first few buildings
-  console.log('Sample buildings:', list.slice(0, 3).map(b => ({
-    title: b.title,
-    is_free: b.is_free,
-    unlocked: unlockedSet.has(b.id)
-  })));
-
-  // Apply filters
-  list = list.filter(b => {
-    const isFree = b.is_free === true;
-    const isUnlocked = !isFree && unlockedSet.has(b.id);
-    const isLocked = !isFree && !unlockedSet.has(b.id);
-    
-    const passes = (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
-    
-    return passes;
-  });
-  
-  console.log('Buildings after filter:', list.length);
-  console.log('=== END DEBUG ===');
-
-  clearPins();
-  addPins(list);
-}
+      // If tour mode, restrict to tour stops
+      if (tour_id) {
+        list = list.filter(b => tourSet.has(b.id));
+      }
 
       // Filter by unlock status
-list = list.filter(b => {
-  const isFree = b.is_free === true;
-  const isUnlocked = !isFree && unlockedSet.has(b.id);
-  const isLocked = !isFree && !unlockedSet.has(b.id);
-  
-  return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
-});
-      // If no filters are active, show nothing
-if (!showFree && !showUnlocked && !showLocked) {
-  list = [];
-}
+      list = list.filter(b => {
+        const isFree = b.is_free === true;
+        const isUnlocked = !isFree && unlockedSet.has(b.id);
+        const isLocked = !isFree && !unlockedSet.has(b.id);
+
+        return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
+      });
 
       clearPins();
       addPins(list);
@@ -233,13 +207,13 @@ if (!showFree && !showUnlocked && !showLocked) {
     // --- Poll filter state from DB ---
     async function pollFilterState() {
       try {
-const rows = await supaJson(
-  `/rest/v1/map_state?user_id=eq.${encodeURIComponent(USER_ID)}&select=show_free,show_locked,show_unlocked,tour_id&limit=1`
-);
+        const rows = await supaJson(
+          `/rest/v1/map_state?user_id=eq.${encodeURIComponent(USER_ID)}&select=show_free,show_locked,show_unlocked,tour_id&limit=1`
+        );
 
         const state = rows && rows[0];
         if (!state) {
-          // No state yet - use defaults
+          // No state yet - use defaults (show all)
           return;
         }
 
