@@ -25,7 +25,7 @@
 
     const NEIGHBORHOOD_COLORS = {
       'DTL': '#1150AB',
-      'SLV': '#2E7D6F',
+      'SLV': '#2E7D6F', 
       'PAS': '#C56B3C',
       'LFZ': '#E85D75',
       'WHO': '#F4A261'
@@ -69,7 +69,7 @@
     let buildingAnnotations = [];
     let routePolylines = [];
 
-    // --- Helper: Supabase fetch ---
+    // --- Helper functions ---
     async function supaJson(path) {
       const res = await fetch(`${SUPABASE_URL}${path}`, {
         headers: {
@@ -86,7 +86,6 @@
       return res.json();
     }
 
-    // --- Distance calculation helper ---
     function calculateDistance(lat1, lng1, lat2, lng2) {
       const R = 6371; // Earth's radius in km
       const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -98,7 +97,7 @@
       return R * c;
     }
 
-    // --- Load data functions ---
+    // --- Data loading ---
     async function loadBuildingsOnce() {
       try {
         allBuildings = await supaJson(
@@ -151,7 +150,7 @@
       }
     }
 
-    // --- Pin management ---
+    // --- Map management ---
     function clearPins() {
       buildingAnnotations.forEach(a => map.removeAnnotation(a));
       buildingAnnotations = [];
@@ -208,14 +207,10 @@
         buildingAnnotations.push(ann);
       });
 
-      // Auto-frame the map to show all visible pins
-// Auto-frame the map to show all visible pins
-if (buildingAnnotations.length > 0) {
-  map.showItems(buildingAnnotations, {
-    animate: true,
-    minimumSpan: new mapkit.CoordinateSpan(0.01, 0.01)
-  });
-}
+      // Auto-frame the map to show all pins
+      if (buildingAnnotations.length > 0) {
+        map.showItems(buildingAnnotations, { animate: true });
+      }
 
       console.log(`Showing ${buildingAnnotations.length} pins`);
     }
@@ -252,47 +247,43 @@ if (buildingAnnotations.length > 0) {
       console.log(`Added ${routePolylines.length} route segments`);
     }
 
-    // --- Filter logic ---
+    // --- Main filter logic ---
     function applyFilters() {
-      // Availability filters
-      const showAvailable = params.get('show_available') !== 'false';
-      const showLocked = params.get('show_locked') !== 'false';
-      
-      // Location filters
-      const filterNeighborhood = params.get('neighborhood'); // e.g. "DTL", "SLV", etc.
-      const filterLocation = params.get('location'); // e.g. "34.0522,-118.2437,5" (lat,lng,radiusKm)
-
       let filteredBuildings = [];
 
       if (TOUR_ID) {
-        // Tour mode: show only tour stops regardless of other filters
+        // TOUR MODE: Show only tour stops with route
         const tourStopIds = new Set(tourStops.map(s => s.building_id));
         filteredBuildings = allBuildings.filter(b => tourStopIds.has(b.id));
-        
         addRoutePolylines();
+        
       } else {
-        // Filter mode: Apply all filters
+        // DISCOVERY MODE: Apply all filters
+        const showAvailable = params.get('show_available') !== 'false';
+        const showLocked = params.get('show_locked') !== 'false';
+        const filterNeighborhood = params.get('neighborhood');
+        const filterLocation = params.get('location');
+
         filteredBuildings = allBuildings.filter(b => {
+          let passes = true;
+
           // Availability filter
           const isFree = b.is_free === true;
           const isUnlocked = unlockedSet.has(b.id);
           const isAvailable = isFree || isUnlocked;
           
-          let passes = true;
-          
-          // Apply availability filter
           if (isAvailable && !showAvailable) passes = false;
           if (!isAvailable && !showLocked) passes = false;
-          
-          // Apply neighborhood filter
+
+          // Neighborhood filter
           if (filterNeighborhood && b.neighborhood_id !== filterNeighborhood) {
             passes = false;
           }
-          
-          // Apply location filter (proximity to user)
-          if (filterLocation) {
+
+          // Location filter  
+          if (filterLocation && b.latitude && b.longitude) {
             const [userLat, userLng, radiusKm] = filterLocation.split(',');
-            if (userLat && userLng && radiusKm && b.latitude && b.longitude) {
+            if (userLat && userLng && radiusKm) {
               const distance = calculateDistance(
                 Number(userLat), Number(userLng),
                 Number(b.latitude), Number(b.longitude)
@@ -300,7 +291,7 @@ if (buildingAnnotations.length > 0) {
               if (distance > Number(radiusKm)) passes = false;
             }
           }
-          
+
           return passes;
         });
       }
