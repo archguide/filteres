@@ -179,9 +179,9 @@
 
     // --- Apply filter logic ---
     function applyFilterState(state) {
-      const showFree = state.show_free === true;
-      const showLocked = state.show_locked === true;
-      const showUnlocked = state.show_unlocked === true;
+      const showFree = state.show_free !== false;
+      const showLocked = state.show_locked !== false;
+      const showUnlocked = state.show_unlocked !== false;
       const tour_id = state.tour_id || null;
 
       let list = allBuildings;
@@ -197,7 +197,7 @@
         const isUnlocked = !isFree && unlockedSet.has(b.id);
         const isLocked = !isFree && !unlockedSet.has(b.id);
 
-        return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
+        return (isFree && showFree) || (isUnlocked && showUnlocked) || (isLocked && showLocked);
       });
 
       clearPins();
