@@ -184,13 +184,13 @@
       }
 
       // Filter by unlock status
-      list = list.filter(b => {
-        const isFree = b.is_free === true;
-        const isUnlocked = !isFree && unlockedSet.has(b.id);
-        const isLocked = !isFree && !unlockedSet.has(b.id);
-
-        return (isFree && showFree) || (isUnlocked && showUnlocked) || (isLocked && showLocked);
-      });
+ list = list.filter(b => {
+  const isFree = b.is_free === true;
+  const isUnlocked = !isFree && unlockedSet.has(b.id);
+  const isLocked = !isFree && !unlockedSet.has(b.id);
+  
+  return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
+});
 
       clearPins();
       addPins(list);
