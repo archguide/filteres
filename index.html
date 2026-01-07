@@ -178,12 +178,24 @@
     }
 
     // --- Apply filter logic ---
-    function applyFilterState(state) {
-const showFree = state.show_free === true;       // NEW (correct for your setup)
-const showLocked = state.show_locked === true;
-const showUnlocked = state.show_unlocked === true;
-
-      let list = allBuildings;
+function applyFilterState(state) {
+  console.log('🔍 DEBUG: Filter state received:', state);
+  
+  const showFree = state.show_free === true;
+  const showLocked = state.show_locked === true;
+  const showUnlocked = state.show_unlocked === true;
+  
+  console.log('🔍 DEBUG: Filter flags:', {showFree, showLocked, showUnlocked});
+  console.log('🔍 DEBUG: Total buildings:', allBuildings.length);
+  
+  // Force show only first 3 buildings regardless of filters (for testing)
+  const testList = allBuildings.slice(0, 3);
+  
+  console.log('🔍 DEBUG: Showing test list of 3 buildings');
+  
+  clearPins();
+  addPins(testList);
+}
 
       // If tour mode, restrict to tour stops
       if (tour_id) {
