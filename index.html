@@ -116,14 +116,12 @@
       if (!tourId) return;
       
       try {
-        // Load tour stops with order
         const stops = await supaJson(
           `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tourId)}&select=building_id,stop_order&order=stop_order`
         );
         tourStops = stops;
         console.log(`Tour has ${tourStops.length} stops`);
 
-        // Load tour route if it exists
         try {
           const route = await supaJson(
             `/rest/v1/tour_routes?tour_id=eq.${encodeURIComponent(tourId)}&select=route_points,route_order&order=route_order`
@@ -238,41 +236,50 @@
 
     // --- Filter logic ---
     function applyFilters() {
-      const showFree = params.get('show_free') === 'true';
-      const showLocked = params.get('show_locked') === 'true';
-      const showUnlocked = params.get('show_unlocked') === 'true';
+      // Read filter parameters - default to true if not specified
+      const showFree = params.get('show_free') !== 'false';
+      const showLocked = params.get('show_locked') !== 'false';
+      const showUnlocked = params.get('show_unlocked') !== 'false';
 
       let filteredBuildings = [];
 
       if (TOUR_ID) {
-        // Tour mode: show only tour stops
+        // Tour mode: show only tour stops regardless of filters
         const tourStopIds = new Set(tourStops.map(s => s.building_id));
         filteredBuildings = allBuildings.filter(b => tourStopIds.has(b.id));
         
-        // Add route polylines for tours
         addRoutePolylines();
         
-        // Center map on tour area
         if (filteredBuildings.length > 0) {
           const coords = filteredBuildings.map(b => new mapkit.Coordinate(Number(b.latitude), Number(b.longitude)));
           const region = mapkit.CoordinateRegion.regionFittingCoordinates(coords);
           map.setRegion(region, true);
         }
       } else {
-        // Filter mode: apply building type filters
-filteredBuildings = allBuildings.filter(b => {
-  const isFree = b.is_free === true;
-  const isUnlocked = !isFree && unlockedSet.has(b.id);
-  const isLocked = !isFree && !unlockedSet.has(b.id);
+        // Filter mode: Independent filter logic
+        filteredBuildings = allBuildings.filter(b => {
+          // Determine building type
+          const isFree = b.is_free === true;
+          const isUnlocked = !isFree && unlockedSet.has(b.id);
+          const isLocked = !isFree && !unlockedSet.has(b.id);
 
-  // New logic: Hide buildings whose type is set to false
-  if (isFree && !showFree) return false;
-  if (isUnlocked && !showUnlocked) return false;  
-  if (isLocked && !showLocked) return false;
-  
-  // Show everything else
-  return true;
-});
+          // Independent filter checks - each filter stands alone
+          if (isFree) {
+            return showFree; // Show free building only if showFree is true
+          }
+          
+          if (isUnlocked) {
+            return showUnlocked; // Show unlocked building only if showUnlocked is true
+          }
+          
+          if (isLocked) {
+            return showLocked; // Show locked building only if showLocked is true
+          }
+
+          // Fallback (shouldn't happen)
+          return false;
+        });
+      }
 
       addPins(filteredBuildings);
     }
