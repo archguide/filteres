@@ -260,14 +260,20 @@
         }
       } else {
         // Filter mode: apply building type filters
-        filteredBuildings = allBuildings.filter(b => {
-          const isFree = b.is_free === true;
-          const isUnlocked = !isFree && unlockedSet.has(b.id);
-          const isLocked = !isFree && !unlockedSet.has(b.id);
+ // Filter by unlock status  
+filteredBuildings = allBuildings.filter(b => {
+  const isFree = b.is_free === true;
+  const isUnlocked = !isFree && unlockedSet.has(b.id);
+  const isLocked = !isFree && !unlockedSet.has(b.id);
 
-          return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
-        });
-      }
+  console.log(`Building ${b.title}: isFree=${isFree}, isUnlocked=${isUnlocked}, isLocked=${isLocked}`);
+  console.log(`Filters: showFree=${showFree}, showUnlocked=${showUnlocked}, showLocked=${showLocked}`);
+  
+  const passes = (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
+  console.log(`Passes filter: ${passes}`);
+  
+  return passes;
+});
 
       addPins(filteredBuildings);
     }
