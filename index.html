@@ -179,10 +179,9 @@
 
     // --- Apply filter logic ---
     function applyFilterState(state) {
-      const showFree = state.show_free !== false;
-      const showLocked = state.show_locked !== false;
-      const showUnlocked = state.show_unlocked !== false;
-      const tour_id = state.tour_id || null;
+const showFree = state.show_free === true;       // NEW (correct for your setup)
+const showLocked = state.show_locked === true;
+const showUnlocked = state.show_unlocked === true;
 
       let list = allBuildings;
 
