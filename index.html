@@ -260,8 +260,7 @@
         }
       } else {
         // Filter mode: apply building type filters
- // Filter by unlock status  
-       filteredBuildings = allBuildings.filter(b => {
+        filteredBuildings = allBuildings.filter(b => {
           const isFree = b.is_free === true;
           const isUnlocked = !isFree && unlockedSet.has(b.id);
           const isLocked = !isFree && !unlockedSet.has(b.id);
@@ -269,10 +268,6 @@
           return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
         });
       }
-
-  
-  return passes;
-});
 
       addPins(filteredBuildings);
     }
