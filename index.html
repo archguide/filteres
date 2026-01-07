@@ -63,7 +63,7 @@
     let allBuildings = [];
     let unlockedSet = new Set();
     let tourSet = new Set();
-    let lastFilterStateJson = "";
+    let lastStateJson = "";
     let buildingAnnotations = [];
 
     // --- Helper: Supabase fetch ---
@@ -184,13 +184,17 @@
       }
 
       // Filter by unlock status
- list = list.filter(b => {
+list = list.filter(b => {
   const isFree = b.is_free === true;
   const isUnlocked = !isFree && unlockedSet.has(b.id);
   const isLocked = !isFree && !unlockedSet.has(b.id);
   
   return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
 });
+      // If no filters are active, show nothing
+if (!showFree && !showUnlocked && !showLocked) {
+  list = [];
+}
 
       clearPins();
       addPins(list);
