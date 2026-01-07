@@ -4,7 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <title>Arch Guide – All Buildings Map</title>
+  <title>Arch Guide – Buildings Map</title>
 
   <script src="https://cdn.apple-mapkit.com/mk/5.x.x/mapkit.js" crossorigin></script>
 
@@ -31,9 +31,11 @@
       'WHO': '#F4A261'
     };
 
-    // --- Get user_id from URL ---
+    // --- Get parameters from URL ---
     const params = new URLSearchParams(window.location.search);
     const USER_ID = params.get('user_id');
+    const TOUR_ID = params.get('tour_id');
+    
     if (!USER_ID) {
       document.body.innerHTML = '<div style="padding:20px;color:red;">Error: user_id required</div>';
       throw new Error('USER_ID missing from URL');
@@ -62,9 +64,10 @@
     // --- State ---
     let allBuildings = [];
     let unlockedSet = new Set();
-    let tourSet = new Set();
-    let lastFilterStateJson = "";
+    let tourStops = [];
+    let tourRoute = [];
     let buildingAnnotations = [];
+    let routePolylines = [];
 
     // --- Helper: Supabase fetch ---
     async function supaJson(path) {
@@ -83,12 +86,17 @@
       return res.json();
     }
 
-    // --- Load data once ---
+    // --- Load data functions ---
     async function loadBuildingsOnce() {
-      allBuildings = await supaJson(
-        `/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id,is_free`
-      );
-      console.log(`Loaded ${allBuildings.length} buildings`);
+      try {
+        allBuildings = await supaJson(
+          `/rest/v1/buildings?select=id,title,latitude,longitude,image,neighborhood_id,is_free`
+        );
+        console.log(`Loaded ${allBuildings.length} buildings`);
+      } catch (err) {
+        console.error('Failed to load buildings:', err);
+        allBuildings = [];
+      }
     }
 
     async function loadUnlockedOnce() {
@@ -99,25 +107,37 @@
         unlockedSet = new Set(rows.map(r => r.building_id));
         console.log(`User has ${unlockedSet.size} unlocked buildings`);
       } catch (err) {
-        console.log('No unlocked buildings table or data');
+        console.log('No unlocked buildings data');
         unlockedSet = new Set();
       }
     }
 
-    async function loadTourSet(tour_id) {
-      if (!tour_id) { 
-        tourSet = new Set(); 
-        return; 
-      }
+    async function loadTourData(tourId) {
+      if (!tourId) return;
+      
       try {
-        const rows = await supaJson(
-          `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tour_id)}&select=building_id`
+        // Load tour stops with order
+        const stops = await supaJson(
+          `/rest/v1/tour_stops?tour_id=eq.${encodeURIComponent(tourId)}&select=building_id,stop_order&order=stop_order`
         );
-        tourSet = new Set(rows.map(r => r.building_id));
-        console.log(`Tour has ${tourSet.size} stops`);
+        tourStops = stops;
+        console.log(`Tour has ${tourStops.length} stops`);
+
+        // Load tour route if it exists
+        try {
+          const route = await supaJson(
+            `/rest/v1/tour_routes?tour_id=eq.${encodeURIComponent(tourId)}&select=route_points,route_order&order=route_order`
+          );
+          tourRoute = route;
+          console.log(`Tour has ${tourRoute.length} route segments`);
+        } catch (err) {
+          console.log('No tour route data');
+          tourRoute = [];
+        }
       } catch (err) {
-        console.log('No tour stops table or data');
-        tourSet = new Set();
+        console.error('Failed to load tour data:', err);
+        tourStops = [];
+        tourRoute = [];
       }
     }
 
@@ -127,7 +147,14 @@
       buildingAnnotations = [];
     }
 
+    function clearRoutes() {
+      routePolylines.forEach(p => map.removeOverlay(p));
+      routePolylines = [];
+    }
+
     function addPins(buildings) {
+      clearPins();
+      
       buildings.forEach(b => {
         if (!b.latitude || !b.longitude) return;
 
@@ -177,82 +204,87 @@
       console.log(`Showing ${buildingAnnotations.length} pins`);
     }
 
-    // --- Apply filter logic ---
-    function applyFilterState(state) {
-      const showFree = state.show_free !== false;
-      const showLocked = state.show_locked !== false;
-      const showUnlocked = state.show_unlocked !== false;
-      const tour_id = state.tour_id || null;
+    function addRoutePolylines() {
+      clearRoutes();
+      
+      if (!tourRoute || tourRoute.length === 0) return;
 
-      let list = allBuildings;
+      tourRoute.forEach(segment => {
+        if (!segment.route_points) return;
 
-      // If tour mode, restrict to tour stops
-      if (tour_id) {
-        list = list.filter(b => tourSet.has(b.id));
-      }
+        try {
+          const points = JSON.parse(segment.route_points);
+          const coordinates = points.map(p => new mapkit.Coordinate(p.lat, p.lng));
+          
+          if (coordinates.length < 2) return;
 
-      // Filter by unlock status
-      list = list.filter(b => {
-        const isFree = b.is_free === true;
-        const isUnlocked = !isFree && unlockedSet.has(b.id);
-        const isLocked = !isFree && !unlockedSet.has(b.id);
+          const polyline = new mapkit.PolylineOverlay(coordinates, {
+            style: new mapkit.Style({
+              strokeColor: '#1150AB',
+              strokeWidth: 4,
+              strokeOpacity: 0.8
+            })
+          });
 
-        return (isFree && showFree) || (isUnlocked && showUnlocked) || (isLocked && showLocked);
+          map.addOverlay(polyline);
+          routePolylines.push(polyline);
+        } catch (err) {
+          console.error('Failed to parse route points:', err);
+        }
       });
 
-      clearPins();
-      addPins(list);
+      console.log(`Added ${routePolylines.length} route segments`);
     }
 
-    // --- Poll filter state from DB ---
-    async function pollFilterState() {
-      try {
-        const rows = await supaJson(
-          `/rest/v1/map_state?user_id=eq.${encodeURIComponent(USER_ID)}&select=show_free,show_locked,show_unlocked,tour_id&limit=1`
-        );
+    // --- Filter logic ---
+    function applyFilters() {
+      const showFree = params.get('show_free') === 'true';
+      const showLocked = params.get('show_locked') === 'true';
+      const showUnlocked = params.get('show_unlocked') === 'true';
 
-        const state = rows && rows[0];
-        if (!state) {
-          // No state yet - use defaults (show all)
-          return;
+      let filteredBuildings = [];
+
+      if (TOUR_ID) {
+        // Tour mode: show only tour stops
+        const tourStopIds = new Set(tourStops.map(s => s.building_id));
+        filteredBuildings = allBuildings.filter(b => tourStopIds.has(b.id));
+        
+        // Add route polylines for tours
+        addRoutePolylines();
+        
+        // Center map on tour area
+        if (filteredBuildings.length > 0) {
+          const coords = filteredBuildings.map(b => new mapkit.Coordinate(Number(b.latitude), Number(b.longitude)));
+          const region = mapkit.CoordinateRegion.regionFittingCoordinates(coords);
+          map.setRegion(region, true);
         }
+      } else {
+        // Filter mode: apply building type filters
+        filteredBuildings = allBuildings.filter(b => {
+          const isFree = b.is_free === true;
+          const isUnlocked = !isFree && unlockedSet.has(b.id);
+          const isLocked = !isFree && !unlockedSet.has(b.id);
 
-        const stateJson = JSON.stringify({
-          show_free: state.show_free,
-          show_locked: state.show_locked,
-          show_unlocked: state.show_unlocked,
-          tour_id: state.tour_id
+          return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
         });
-
-        // Only update if changed
-        if (stateJson !== lastFilterStateJson) {
-          lastFilterStateJson = stateJson;
-
-          // If tour changed, refresh tour stops
-          await loadTourSet(state.tour_id);
-
-          applyFilterState(state);
-        }
-      } catch (err) {
-        console.error('Poll error:', err);
       }
+
+      addPins(filteredBuildings);
     }
 
-    // --- Boot ---
-    (async function boot() {
+    // --- Initialize ---
+    (async function init() {
       try {
         await loadBuildingsOnce();
         await loadUnlockedOnce();
+        
+        if (TOUR_ID) {
+          await loadTourData(TOUR_ID);
+        }
 
-        // Show all by default
-        clearPins();
-        addPins(allBuildings);
-
-        // Start polling
-        await pollFilterState();
-        setInterval(pollFilterState, 700);
+        applyFilters();
       } catch (err) {
-        console.error('Boot error:', err);
+        console.error('Initialization error:', err);
         document.body.innerHTML = `<div style="padding:20px;color:red;">Error: ${err.message}</div>`;
       }
     })();
