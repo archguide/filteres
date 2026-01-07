@@ -200,7 +200,8 @@
     async function pollFilterState() {
       try {
      const rows = await supaJson(
-  `/rest/v1/map_state?user_id=eq.${encodeURIComponent(USER_ID)}&show_free=eq.${show_free}&show_unlocked=eq.${show_unlocked}&show_locked=eq.${show_locked}&tour_id=eq.${tour_id}&limit=1`
+const rows = await supaJson(
+  `/rest/v1/map_state?user_id=eq.${encodeURIComponent(USER_ID)}&limit=1`
 );
 
         const state = rows && rows[0];
