@@ -238,9 +238,9 @@
 
     // --- Filter logic ---
     function applyFilters() {
-      const showFree = params.get('show_free') === 'true';
-      const showLocked = params.get('show_locked') === 'true';
-      const showUnlocked = params.get('show_unlocked') === 'true';
+      const showFree = params.get('show_free') === 'false';
+      const showLocked = params.get('show_locked') === 'false';
+      const showUnlocked = params.get('show_unlocked') === 'false';
 
       let filteredBuildings = [];
 
@@ -261,16 +261,15 @@
       } else {
         // Filter mode: apply building type filters
  // Filter by unlock status  
-filteredBuildings = allBuildings.filter(b => {
-  const isFree = b.is_free === true;
-  const isUnlocked = !isFree && unlockedSet.has(b.id);
-  const isLocked = !isFree && !unlockedSet.has(b.id);
+       filteredBuildings = allBuildings.filter(b => {
+          const isFree = b.is_free === true;
+          const isUnlocked = !isFree && unlockedSet.has(b.id);
+          const isLocked = !isFree && !unlockedSet.has(b.id);
 
-  console.log(`Building ${b.title}: isFree=${isFree}, isUnlocked=${isUnlocked}, isLocked=${isLocked}`);
-  console.log(`Filters: showFree=${showFree}, showUnlocked=${showUnlocked}, showLocked=${showLocked}`);
-  
-  const passes = (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
-  console.log(`Passes filter: ${passes}`);
+          return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
+        });
+      }
+
   
   return passes;
 });
