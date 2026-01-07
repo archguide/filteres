@@ -196,17 +196,6 @@
         buildingAnnotations.push(ann);
       });
 
-  if (buildingAnnotations.length > 0) {
-    const coords = buildingAnnotations.map(a => a.coordinate);
-    const region = mapkit.CoordinateRegion.regionFittingCoordinates(coords, {
-      minimumSpan: new mapkit.CoordinateSpan(0.01, 0.01) // Minimum zoom level
-    });
-    map.setRegion(region, true); // true = animated transition
-  }
-
-  console.log(`Showing ${buildingAnnotations.length} pins`);
-}
-
     function addRoutePolylines() {
       clearRoutes();
       
