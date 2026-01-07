@@ -150,21 +150,39 @@
       routePolylines = [];
     }
 
-    function addPins(buildings) {
-      clearPins();
-      
-      buildings.forEach(b => {
-        if (!b.latitude || !b.longitude) return;
+function addPins(buildings) {
+  clearPins();
+  
+  buildings.forEach(b => {
+    if (!b.latitude || !b.longitude) return;
 
-        const ann = new mapkit.MarkerAnnotation(
-          new mapkit.Coordinate(Number(b.latitude), Number(b.longitude)),
-          {
-            color: NEIGHBORHOOD_COLORS[b.neighborhood_id] || '#666666',
-            glyphText: '',
-            title: b.title,
-            data: b
-          }
-        );
+    const ann = new mapkit.MarkerAnnotation(
+      new mapkit.Coordinate(Number(b.latitude), Number(b.longitude)),
+      {
+        color: NEIGHBORHOOD_COLORS[b.neighborhood_id] || '#666666',
+        glyphText: '',
+        title: b.title,
+        data: b
+      }
+    );
+
+    // ... rest of annotation setup ...
+
+    map.addAnnotation(ann);
+    buildingAnnotations.push(ann);
+  });
+
+  // Auto-frame the map to show all visible pins
+  if (buildingAnnotations.length > 0) {
+    const coords = buildingAnnotations.map(a => a.coordinate);
+    const region = mapkit.CoordinateRegion.regionFittingCoordinates(coords, {
+      minimumSpan: new mapkit.CoordinateSpan(0.01, 0.01) // Minimum zoom level
+    });
+    map.setRegion(region, true); // true = animated transition
+  }
+
+  console.log(`Showing ${buildingAnnotations.length} pins`);
+}
 
         ann.callout = {
           calloutElementForAnnotation: function(annotation) {
