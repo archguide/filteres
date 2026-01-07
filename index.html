@@ -169,19 +169,49 @@
       console.log(`Showing ${buildingAnnotations.length} pins`);
     }
 
-    // --- Apply filter logic ---
-    function applyFilterState(state) {
-      const showFree = state.show_free !== true;
-      const showLocked = state.show_locked !== true;
-      const showUnlocked = state.show_unlocked !== true;
-      const tour_id = state.tour_id || null;
+function applyFilterState(state) {
+  console.log('=== FILTER DEBUG ===');
+  console.log('State from database:', state);
+  
+  const showFree = state.show_free === true;
+  const showLocked = state.show_locked === true;  
+  const showUnlocked = state.show_unlocked === true;
+  
+  console.log('Filter flags:', {showFree, showLocked, showUnlocked});
+  console.log('Total buildings before filter:', allBuildings.length);
+  
+  let list = allBuildings;
 
-      let list = allBuildings;
+  // If tour mode, restrict to tour stops
+  if (state.tour_id) {
+    list = list.filter(b => tourSet.has(b.id));
+    console.log('After tour filter:', list.length);
+  }
 
-      // If tour mode, restrict to tour stops
-      if (tour_id) {
-        list = list.filter(b => tourSet.has(b.id));
-      }
+  // Debug: Check first few buildings
+  console.log('Sample buildings:', list.slice(0, 3).map(b => ({
+    title: b.title,
+    is_free: b.is_free,
+    unlocked: unlockedSet.has(b.id)
+  })));
+
+  // Apply filters
+  list = list.filter(b => {
+    const isFree = b.is_free === true;
+    const isUnlocked = !isFree && unlockedSet.has(b.id);
+    const isLocked = !isFree && !unlockedSet.has(b.id);
+    
+    const passes = (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
+    
+    return passes;
+  });
+  
+  console.log('Buildings after filter:', list.length);
+  console.log('=== END DEBUG ===');
+
+  clearPins();
+  addPins(list);
+}
 
       // Filter by unlock status
 list = list.filter(b => {
