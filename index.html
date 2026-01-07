@@ -25,7 +25,7 @@
 
     const NEIGHBORHOOD_COLORS = {
       'DTL': '#1150AB',
-      'SLV': '#2E7D6F', 
+      'SLV': '#2E7D6F',
       'PAS': '#C56B3C',
       'LFZ': '#E85D75',
       'WHO': '#F4A261'
@@ -34,6 +34,7 @@
     // --- Get parameters from URL ---
     const params = new URLSearchParams(window.location.search);
     const USER_ID = params.get('user_id');
+    const TOUR_ID = params.get('tour_id');
     
     if (!USER_ID) {
       document.body.innerHTML = '<div style="padding:20px;color:red;">Error: user_id required</div>';
@@ -68,7 +69,7 @@
     let buildingAnnotations = [];
     let routePolylines = [];
 
-    // --- Helper functions ---
+    // --- Helper: Supabase fetch ---
     async function supaJson(path) {
       const res = await fetch(`${SUPABASE_URL}${path}`, {
         headers: {
@@ -85,7 +86,7 @@
       return res.json();
     }
 
-    // --- Data loading ---
+    // --- Load data functions ---
     async function loadBuildingsOnce() {
       try {
         allBuildings = await supaJson(
@@ -138,7 +139,7 @@
       }
     }
 
-    // --- Map management ---
+    // --- Pin management ---
     function clearPins() {
       buildingAnnotations.forEach(a => map.removeAnnotation(a));
       buildingAnnotations = [];
@@ -190,47 +191,47 @@
             return callout;
           }
         };
+function addPins(buildings) {
+  clearPins();
+  
+  buildings.forEach(b => {
+    if (!b.latitude || !b.longitude) return;
 
+    const ann = new mapkit.MarkerAnnotation(
+      new mapkit.Coordinate(Number(b.latitude), Number(b.longitude)),
+      {
+        color: NEIGHBORHOOD_COLORS[b.neighborhood_id] || '#666666',
+        glyphText: '',
+        title: b.title,
+        data: b
+      }
+    );
+
+    // ... rest of annotation setup ...
+
+    map.addAnnotation(ann);
+    buildingAnnotations.push(ann);
+  });
+
+  // Auto-frame the map to show all visible pins
+  if (buildingAnnotations.length > 0) {
+    const coords = buildingAnnotations.map(a => a.coordinate);
+    const region = mapkit.CoordinateRegion.regionFittingCoordinates(coords, {
+      minimumSpan: new mapkit.CoordinateSpan(0.01, 0.01) // Minimum zoom level
+    });
+    map.setRegion(region, true); // true = animated transition
+  }
+
+  console.log(`Showing ${buildingAnnotations.length} pins`);
+}
         map.addAnnotation(ann);
         buildingAnnotations.push(ann);
       });
 
-      console.log(`Added ${buildingAnnotations.length} pins to map`);
-    }
-
-    function focusMapOnPins() {
-      if (buildingAnnotations.length === 0) return;
-      
-      // Get bounds of all pins
-      let minLat = buildingAnnotations[0].coordinate.latitude;
-      let maxLat = buildingAnnotations[0].coordinate.latitude;
-      let minLng = buildingAnnotations[0].coordinate.longitude;
-      let maxLng = buildingAnnotations[0].coordinate.longitude;
-
-      buildingAnnotations.forEach(ann => {
-        const lat = ann.coordinate.latitude;
-        const lng = ann.coordinate.longitude;
-        if (lat < minLat) minLat = lat;
-        if (lat > maxLat) maxLat = lat;
-        if (lng < minLng) minLng = lng;
-        if (lng > maxLng) maxLng = lng;
-      });
-
-      // Add padding
-      const latPadding = (maxLat - minLat) * 0.1;
-      const lngPadding = (maxLng - minLng) * 0.1;
-
-      const center = new mapkit.Coordinate(
-        (minLat + maxLat) / 2,
-        (minLng + maxLng) / 2
-      );
-
-      const span = new mapkit.CoordinateSpan(
-        Math.max((maxLat - minLat) + latPadding, 0.01),
-        Math.max((maxLng - minLng) + lngPadding, 0.01)
-      );
-
-      map.setRegion(new mapkit.CoordinateRegion(center, span), true);
+      if (buildingAnnotations.length) {
+        map.showItems(buildingAnnotations);
+      }
+      console.log(`Showing ${buildingAnnotations.length} pins`);
     }
 
     function addRoutePolylines() {
@@ -265,70 +266,45 @@
       console.log(`Added ${routePolylines.length} route segments`);
     }
 
-    // --- Main filter logic ---
+    // --- Filter logic ---
     function applyFilters() {
-      // Check if this is tour mode
-      const tourId = params.get('tour_id');
-      
-      if (tourId) {
-        // TOUR MODE
-        const tourStopIds = new Set(tourStops.map(s => s.building_id));
-        const filteredBuildings = allBuildings.filter(b => tourStopIds.has(b.id));
-        
-        addPins(filteredBuildings);
-        addRoutePolylines();
-        focusMapOnPins();
-        return;
-      }
-
-      // DISCOVERY MODE - Apply filters
+      // Read filter parameters - default to true if not specified  
       const showAvailable = params.get('show_available') !== 'false';
       const showLocked = params.get('show_locked') !== 'false';
-      const filterNeighborhood = params.get('neighborhood');
-      const userLocation = params.get('location');
 
-      const filteredBuildings = allBuildings.filter(b => {
-        // Availability filter
-        const isFree = b.is_free === true;
-        const isUnlocked = unlockedSet.has(b.id);
-        const isAvailable = isFree || isUnlocked;
+      let filteredBuildings = [];
+
+      if (TOUR_ID) {
+        // Tour mode: show only tour stops regardless of filters
+        const tourStopIds = new Set(tourStops.map(s => s.building_id));
+        filteredBuildings = allBuildings.filter(b => tourStopIds.has(b.id));
         
-        if (isAvailable && !showAvailable) return false;
-        if (!isAvailable && !showLocked) return false;
-
-        // Neighborhood filter
-        if (filterNeighborhood && filterNeighborhood !== 'ALL' && b.neighborhood_id !== filterNeighborhood) {
-          return false;
+        addRoutePolylines();
+        
+        if (filteredBuildings.length > 0) {
+          const coords = filteredBuildings.map(b => new mapkit.Coordinate(Number(b.latitude), Number(b.longitude)));
+          const region = mapkit.CoordinateRegion.regionFittingCoordinates(coords);
+          map.setRegion(region, true);
         }
+      } else {
+        // Filter mode: Two groups - Available vs Locked
+        filteredBuildings = allBuildings.filter(b => {
+          // Determine if building is available to user
+          const isFree = b.is_free === true;
+          const isUnlocked = unlockedSet.has(b.id);
+          const isAvailable = isFree || isUnlocked; // Free OR unlocked = available
+          const isLocked = !isAvailable; // Not available = locked
 
-        return true;
-      });
-
-      addPins(filteredBuildings);
-
-      // Handle user location for map centering
-      if (userLocation) {
-        const locationParts = userLocation.split(',');
-        if (locationParts.length >= 2) {
-          const userLat = Number(locationParts[0]);
-          const userLng = Number(locationParts[1]);
-          const radiusKm = locationParts[2] ? Number(locationParts[2]) : 5;
-          
-          if (!isNaN(userLat) && !isNaN(userLng)) {
-            // Convert km to approximate degrees (rough conversion)
-            const spanSize = (radiusKm / 111) * 2;
-            
-            map.setRegion(new mapkit.CoordinateRegion(
-              new mapkit.Coordinate(userLat, userLng),
-              new mapkit.CoordinateSpan(spanSize, spanSize)
-            ), true);
-            return;
+          // Simple two-group logic
+          if (isAvailable) {
+            return showAvailable;
+          } else {
+            return showLocked;
           }
-        }
+        });
       }
 
-      // Default: focus on filtered pins
-      focusMapOnPins();
+      addPins(filteredBuildings);
     }
 
     // --- Initialize ---
@@ -337,9 +313,8 @@
         await loadBuildingsOnce();
         await loadUnlockedOnce();
         
-        const tourId = params.get('tour_id');
-        if (tourId) {
-          await loadTourData(tourId);
+        if (TOUR_ID) {
+          await loadTourData(TOUR_ID);
         }
 
         applyFilters();
