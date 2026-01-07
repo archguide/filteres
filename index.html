@@ -237,36 +237,12 @@
     }
 
     // --- Filter logic ---
+    function applyFilters() {
+      const showFree = params.get('show_free') === 'true';
+      const showLocked = params.get('show_locked') === 'true';
+      const showUnlocked = params.get('show_unlocked') === 'true';
 
-// Read URL parameters with defaults
-const showFree = params.get('show_free') !== 'true';
-const showLocked = params.get('show_locked') !== 'true'; 
-const showUnlocked = params.get('show_unlocked') !== 'true';
-
-// If no URL parameters at all, show everything
-const hasFilterParams = params.has('show_free') || params.has('show_locked') || params.has('show_unlocked');
-if (!hasFilterParams) {
-  filteredBuildings = allBuildings;
-} else {
-  // Apply filters
-
-    // If all filters are false, show nothing
-if (!showFree && !showLocked && !showUnlocked) {
-  return false;
-}
-
-// Otherwise, only show if the building matches an active filter
-const isFree = b.is_free === true;
-const isUnlocked = !isFree && unlockedSet.has(b.id);
-const isLocked = !isFree && !unlockedSet.has(b.id);
-
-// Show if building type matches an active filter
-if (isFree && showFree) return true;
-if (isUnlocked && showUnlocked) return true;
-if (isLocked && showLocked) return true;
-
-// Hide if building type doesn't match any active filter
-return false;
+      let filteredBuildings = [];
 
       if (TOUR_ID) {
         // Tour mode: show only tour stops
