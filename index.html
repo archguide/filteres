@@ -237,6 +237,14 @@
     }
 
     // --- Filter logic ---
+    function applyFilters() {
+  console.log('URL parameters:', window.location.search);
+  console.log('show_free:', params.get('show_free'));
+  console.log('show_locked:', params.get('show_locked'));
+  console.log('show_unlocked:', params.get('show_unlocked'));
+  
+  // rest of your existing filter logic...
+}
 // Read URL parameters with defaults
 const showFree = params.get('show_free') !== 'false';
 const showLocked = params.get('show_locked') !== 'false'; 
