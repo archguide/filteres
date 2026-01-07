@@ -236,10 +236,9 @@
 
     // --- Filter logic ---
     function applyFilters() {
-      // Read filter parameters - default to true if not specified
-      const showFree = params.get('show_free') !== 'false';
+      // Read filter parameters - default to true if not specified  
+      const showAvailable = params.get('show_available') !== 'false';
       const showLocked = params.get('show_locked') !== 'false';
-      const showUnlocked = params.get('show_unlocked') !== 'false';
 
       let filteredBuildings = [];
 
@@ -256,28 +255,20 @@
           map.setRegion(region, true);
         }
       } else {
-        // Filter mode: Independent filter logic
+        // Filter mode: Two groups - Available vs Locked
         filteredBuildings = allBuildings.filter(b => {
-          // Determine building type
+          // Determine if building is available to user
           const isFree = b.is_free === true;
-          const isUnlocked = !isFree && unlockedSet.has(b.id);
-          const isLocked = !isFree && !unlockedSet.has(b.id);
+          const isUnlocked = unlockedSet.has(b.id);
+          const isAvailable = isFree || isUnlocked; // Free OR unlocked = available
+          const isLocked = !isAvailable; // Not available = locked
 
-          // Independent filter checks - each filter stands alone
-          if (isFree) {
-            return showFree; // Show free building only if showFree is true
+          // Simple two-group logic
+          if (isAvailable) {
+            return showAvailable;
+          } else {
+            return showLocked;
           }
-          
-          if (isUnlocked) {
-            return showUnlocked; // Show unlocked building only if showUnlocked is true
-          }
-          
-          if (isLocked) {
-            return showLocked; // Show locked building only if showLocked is true
-          }
-
-          // Fallback (shouldn't happen)
-          return false;
         });
       }
 
