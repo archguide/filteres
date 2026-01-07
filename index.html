@@ -276,9 +276,9 @@
           if (!isAvailable && !showLocked) passes = false;
 
           // Neighborhood filter
-          if (filterNeighborhood && b.neighborhood_id !== filterNeighborhood) {
-            passes = false;
-          }
+       if (filterNeighborhood && filterNeighborhood !== 'ALL' && b.neighborhood_id !== filterNeighborhood) {
+  passes = false;
+}
 
           // Location filter  
    // Center map on user location if provided
