@@ -249,14 +249,24 @@ if (!hasFilterParams) {
   filteredBuildings = allBuildings;
 } else {
   // Apply filters
-  filteredBuildings = allBuildings.filter(b => {
-    const isFree = b.is_free === true;
-    const isUnlocked = !isFree && unlockedSet.has(b.id);
-    const isLocked = !isFree && !unlockedSet.has(b.id);
 
-    return (showFree && isFree) || (showUnlocked && isUnlocked) || (showLocked && isLocked);
-  });
+    // If all filters are false, show nothing
+if (!showFree && !showLocked && !showUnlocked) {
+  return false;
 }
+
+// Otherwise, only show if the building matches an active filter
+const isFree = b.is_free === true;
+const isUnlocked = !isFree && unlockedSet.has(b.id);
+const isLocked = !isFree && !unlockedSet.has(b.id);
+
+// Show if building type matches an active filter
+if (isFree && showFree) return true;
+if (isUnlocked && showUnlocked) return true;
+if (isLocked && showLocked) return true;
+
+// Hide if building type doesn't match any active filter
+return false;
       let filteredBuildings = [];
 
       if (TOUR_ID) {
