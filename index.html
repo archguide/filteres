@@ -196,6 +196,12 @@
         buildingAnnotations.push(ann);
       });
 
+      if (buildingAnnotations.length) {
+        map.showItems(buildingAnnotations);
+      }
+      console.log(`Showing ${buildingAnnotations.length} pins`);
+    }
+
     function addRoutePolylines() {
       clearRoutes();
       
