@@ -196,32 +196,6 @@
         buildingAnnotations.push(ann);
       });
 
-      if (buildingAnnotations.length) {
-        map.showItems(buildingAnnotations);
-      }
-      console.log(`Showing ${buildingAnnotations.length} pins`);
-    }
-function addPins(buildings) {
-  clearPins();
-  
-  buildings.forEach(b => {
-    if (!b.latitude || !b.longitude) return;
-
-    const ann = new mapkit.MarkerAnnotation(
-      new mapkit.Coordinate(Number(b.latitude), Number(b.longitude)),
-      {
-        color: NEIGHBORHOOD_COLORS[b.neighborhood_id] || '#666666',
-        glyphText: '',
-        title: b.title,
-        data: b
-      }
-    );
-
-    // ... rest of annotation setup ...
-
-    map.addAnnotation(ann);
-    buildingAnnotations.push(ann);
-  });
 
   // Auto-frame the map to show all visible pins
   if (buildingAnnotations.length > 0) {
